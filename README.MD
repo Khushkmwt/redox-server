@@ -81,14 +81,25 @@ docker compose down
 
 ## Connecting
 
-Any RESP2-compatible client works. Connect using `redis-cli`:
+### 1. Using Redox CLI (`redox-cli`)
+The dedicated, themed interactive client for Redox:
+
+```bash
+# From the redox-cli directory
+npm start -- -p 6379
+
+# Or globally if linked via `npm link`
+redox-cli -p 6379
+```
+
+### 2. Using standard Redis CLI (`redis-cli`)
+Redox speaks standard RESP2, so official Redis tools work out of the box:
 
 ```bash
 redis-cli -h 127.0.0.1 -p 6379
 ```
 
-Or connect with raw TCP tools like `nc`:
-
+### 3. Using raw TCP (`nc`)
 ```bash
 nc 127.0.0.1 6379
 ```

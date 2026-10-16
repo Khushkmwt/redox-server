@@ -43,3 +43,18 @@ docker compose up -d
 
 ### TCP Healthcheck:
 The Compose setup includes an automated TCP healthcheck that connects on port 6379, executes `PING`, expects `+PONG\r\n`, and reports container health status.
+
+---
+
+## Testing Connections
+
+Connect using the official `redox-cli`:
+
+```bash
+# Connect to running server
+redox-cli -p 7865
+
+# Or execute one-shot healthcheck
+redox-cli -p 7865 PING
+```
+
