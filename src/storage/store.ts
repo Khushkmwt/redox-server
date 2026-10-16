@@ -22,6 +22,11 @@ class Store {
   private expiredKeys = 0;
   private expiryTimer: NodeJS.Timeout | null = null;
 
+  public readonly startTime: number = Date.now();
+  public lastSaveTimestamp: number = 0;
+  public totalConnections: number = 0;
+  public totalCommands: number = 0;
+
   public maxMemory: number = parseMemoryString(process.env.MAX_MEMORY);
   public evictionPolicy: EvictionPolicy =
     (process.env.EVICTION_POLICY?.toLowerCase() as EvictionPolicy) === "allkeys-lru"
@@ -446,21 +451,63 @@ class Store {
 
   info(section?: string): string {
     const sec = section?.toLowerCase();
-    const lines: string[] = [];
+    const blocks: string[] = [];
 
-    if (!sec || sec === "memory") {
-      lines.push("# Memory");
-      lines.push(`used_memory:${this.usedMemory}`);
-      lines.push(`used_memory_human:${formatBytesHuman(this.usedMemory)}`);
-      lines.push(`maxmemory:${this.maxMemory}`);
-      lines.push(`maxmemory_human:${formatBytesHuman(this.maxMemory)}`);
-      lines.push(`maxmemory_policy:${this.evictionPolicy}`);
-      lines.push(`evicted_keys:${this.evictedKeys}`);
-      lines.push(`expired_keys:${this.expiredKeys}`);
-      lines.push(`total_keys:${this.data.size}`);
+    const serverSection = () => {
+      const uptimeSec = Math.floor((Date.now() - this.startTime) / 1000);
+      return [
+        "# Server",
+        "redox_version:1.0.0",
+        `process_id:${process.pid}`,
+        `tcp_port:${process.env.PORT ?? 6379}`,
+        `uptime_in_seconds:${uptimeSec}`,
+      ].join("\r\n");
+    };
+
+    const memorySection = () => {
+      return [
+        "# Memory",
+        `used_memory:${this.usedMemory}`,
+        `used_memory_human:${formatBytesHuman(this.usedMemory)}`,
+        `maxmemory:${this.maxMemory}`,
+        `maxmemory_human:${formatBytesHuman(this.maxMemory)}`,
+        `maxmemory_policy:${this.evictionPolicy}`,
+        `evicted_keys:${this.evictedKeys}`,
+        `expired_keys:${this.expiredKeys}`,
+        `total_keys:${this.data.size}`,
+      ].join("\r\n");
+    };
+
+    const persistenceSection = () => {
+      return [
+        "# Persistence",
+        "loading:0",
+        `rdb_last_save_time:${this.lastSaveTimestamp}`,
+        "rdb_last_bgsave_status:ok",
+      ].join("\r\n");
+    };
+
+    const statsSection = () => {
+      return [
+        "# Stats",
+        `total_connections_received:${this.totalConnections}`,
+        `total_commands_processed:${this.totalCommands}`,
+      ].join("\r\n");
+    };
+
+    if (!sec || sec === "all" || sec === "default") {
+      blocks.push(serverSection(), memorySection(), persistenceSection(), statsSection());
+    } else if (sec === "server") {
+      blocks.push(serverSection());
+    } else if (sec === "memory") {
+      blocks.push(memorySection());
+    } else if (sec === "persistence") {
+      blocks.push(persistenceSection());
+    } else if (sec === "stats") {
+      blocks.push(statsSection());
     }
 
-    return lines.join("\r\n");
+    return blocks.join("\r\n\r\n");
   }
 }
 

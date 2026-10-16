@@ -75,6 +75,8 @@ export function saveSnapshot(
   fs.writeFileSync(tempPath, json, "utf8");
   fs.renameSync(tempPath, filePath);
 
+  store.lastSaveTimestamp = Math.floor(snapshot.savedAt / 1000);
+
   return { keyCount: entries.length, bytes: Buffer.byteLength(json, "utf8") };
 }
 
@@ -107,6 +109,8 @@ export function restoreSnapshot(
       restoredCount++;
     }
   }
+
+  store.lastSaveTimestamp = Math.floor(snapshot.savedAt / 1000);
 
   const elapsedMs = performance.now() - start;
   return { restoredCount, elapsedMs };

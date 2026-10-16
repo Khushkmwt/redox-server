@@ -234,4 +234,9 @@ Full specification of all 19 Redis-compatible commands implemented in `redox-ser
 - **Description**: Synchronously saves the entire in-memory dataset to disk (`data/dump.json` or custom `$DUMP_PATH`) using atomic temporary file write and rename.
 - **Returns**: `+OK`
 
+### LASTSAVE
+- **Syntax**: `LASTSAVE`
+- **Description**: Returns the UNIX timestamp (in seconds) of the last successful snapshot save to disk.
+- **Returns**: Integer UNIX timestamp (e.g. `:1729124400`).
+
 

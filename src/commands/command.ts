@@ -37,6 +37,7 @@ export const SUPPORTED_COMMANDS = [
   "PTTL",
   "PERSIST",
   "SAVE",
+  "LASTSAVE",
 ];
 
 // COMMAND [DOCS | COUNT | LIST]

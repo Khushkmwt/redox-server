@@ -16,10 +16,11 @@ Clients connect over TCP and communicate using the **RESP2** wire protocol — t
 
 ## Documentation
 
-Comprehensive documentation is available in the [`docs/`](./docs) directory:
+Comprehensive documentation is available in the [`docs/`](./docs) directory and release notes:
 
+- [**v1.0.0 Release Notes**](./docs/release/RELEASE_v1.0.0.md) — What's new in the official v1.0.0 major release.
 - [**Architecture Guide**](./docs/architecture.md) — System components, connection lifecycle, and parser state machine.
-- [**Command Reference**](./docs/commands.md) — Full specification for all 19 supported commands with examples.
+- [**Command Reference**](./docs/commands.md) — Full specification for all 36 supported commands with examples.
 - [**RESP2 Protocol**](./docs/protocol.md) — Wire-level protocol details, framing, and types.
 - [**Configuration Guide**](./docs/configuration.md) — Environment variables, local setup, and Docker deployment.
 
@@ -175,6 +176,7 @@ nc 127.0.0.1 6379
 | `COMMAND COUNT` | Total number of commands | Integer count |
 | `COMMAND DOCS` | Return empty docs array for client probes | Array |
 | `SAVE` | Persist snapshot of in-memory store to disk | `+OK` |
+| `LASTSAVE` | UNIX timestamp of last successful snapshot | Integer |
 
 Command names are **case-insensitive**.
 

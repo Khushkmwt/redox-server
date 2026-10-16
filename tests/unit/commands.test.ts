@@ -102,4 +102,41 @@ describe("command dispatcher", () => {
   it("SAVE with extra args returns error", () => {
     expect(run(["SAVE", "extra"])).toMatch(/ERR/);
   });
+
+  // --- LASTSAVE ---
+  it("LASTSAVE returns integer timestamp", () => {
+    const res = run(["LASTSAVE"]);
+    expect(res).toMatch(/^:[0-9]+\r\n$/);
+  });
+
+  it("LASTSAVE with extra args returns error", () => {
+    expect(run(["LASTSAVE", "extra"])).toMatch(/ERR/);
+  });
+
+  // --- INFO sections ---
+  it("INFO without args returns all sections", () => {
+    const res = run(["INFO"]);
+    expect(res).toContain("# Server");
+    expect(res).toContain("# Memory");
+    expect(res).toContain("# Persistence");
+    expect(res).toContain("# Stats");
+  });
+
+  it("INFO server returns only server section", () => {
+    const res = run(["INFO", "server"]);
+    expect(res).toContain("# Server");
+    expect(res).not.toContain("# Memory");
+  });
+
+  it("INFO persistence returns only persistence section", () => {
+    const res = run(["INFO", "persistence"]);
+    expect(res).toContain("# Persistence");
+    expect(res).toContain("rdb_last_save_time:");
+  });
+
+  it("INFO stats returns only stats section", () => {
+    const res = run(["INFO", "stats"]);
+    expect(res).toContain("# Stats");
+    expect(res).toContain("total_commands_processed:");
+  });
 });

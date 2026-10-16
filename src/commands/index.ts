@@ -40,6 +40,7 @@ import { ttl } from "./ttl.js";
 import { pttl } from "./pttl.js";
 import { persist } from "./persist.js";
 import { save } from "./save.js";
+import { lastsave } from "./lastsave.js";
 
 type Handler = (args: string[], store: Store) => Buffer;
 
@@ -79,6 +80,7 @@ const handlers: Record<string, Handler> = {
   PTTL: pttl,
   PERSIST: persist,
   SAVE: save,
+  LASTSAVE: lastsave,
 };
 
 /**
@@ -92,6 +94,7 @@ export function dispatch(args: string[], store: Store): Buffer {
     return encode.error("ERR empty command");
   }
 
+  store.totalCommands++;
   const name = args[0].toUpperCase();
   const handler = handlers[name];
 

@@ -35,6 +35,7 @@ export function createRedoxServer(options: RedoxServerOptions = {}): net.Server 
     }
 
     activeConnections++;
+    storeInstance.totalConnections++;
     socket.setNoDelay(true);
     logger.info(`[connect] ${socket.remoteAddress}:${socket.remotePort} (active: ${activeConnections})`);
 

@@ -24,6 +24,9 @@ RUN npm ci --omit=dev
 
 COPY --from=builder /app/dist ./dist
 
+# Ensure persistence data directory exists with non-root ownership
+RUN mkdir -p /app/data && chown -R redox:redox /app
+
 USER redox
 
 EXPOSE 6379
