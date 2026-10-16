@@ -3,6 +3,7 @@ import { store } from "../../src/storage/store.js";
 import { dispatch } from "../../src/commands/index.js";
 
 beforeEach(() => {
+  store.stopActiveExpiry();
   store.flushAll();
 });
 

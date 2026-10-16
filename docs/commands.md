@@ -229,4 +229,9 @@ Full specification of all 19 Redis-compatible commands implemented in `redox-ser
 - **Description**: Removes the existing timeout on key, making it permanent.
 - **Returns**: `:1` if timeout was removed, `:0` if key does not exist or has no timeout.
 
+### SAVE
+- **Syntax**: `SAVE`
+- **Description**: Synchronously saves the entire in-memory dataset to disk (`data/dump.json` or custom `$DUMP_PATH`) using atomic temporary file write and rename.
+- **Returns**: `+OK`
+
 

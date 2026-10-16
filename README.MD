@@ -63,6 +63,7 @@ Configure using environment variables or a `.env` file:
 | `LOG_LEVEL` | `INFO` | Logging verbosity (`DEBUG`, `INFO`, `WARN`, `ERROR`, `SILENT`) |
 | `MAX_MEMORY` | `0` | Max memory cap (e.g. `64mb`, `500kb`; `0` disables cap) |
 | `EVICTION_POLICY` | `noeviction` | Eviction behavior when memory cap reached (`noeviction`, `allkeys-lru`) |
+| `DUMP_PATH` | `data/dump.json` | Snapshot persistence file location |
 
 ---
 
@@ -173,6 +174,7 @@ nc 127.0.0.1 6379
 | `COMMAND` | List all supported commands | Array of bulk strings |
 | `COMMAND COUNT` | Total number of commands | Integer count |
 | `COMMAND DOCS` | Return empty docs array for client probes | Array |
+| `SAVE` | Persist snapshot of in-memory store to disk | `+OK` |
 
 Command names are **case-insensitive**.
 
@@ -181,7 +183,7 @@ Command names are **case-insensitive**.
 ## Running tests & benchmark
 
 ```bash
-# Run full Vitest suite (126+ tests)
+# Run full Vitest suite (134+ tests including unit, integration & stress)
 npm test
 
 # Run tests in watch mode
@@ -190,7 +192,7 @@ npm run test:watch
 # Run coverage report
 npm run test:coverage
 
-# Run sequential throughput benchmark (server must be running)
+# Run high-performance sequential latency & pipelined throughput benchmark
 npm run benchmark
 ```
 

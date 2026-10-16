@@ -93,4 +93,13 @@ describe("command dispatcher", () => {
   it("TYPE returns 'none' for missing key", () => {
     expect(run(["TYPE", "a"])).toBe("+none\r\n");
   });
+
+  // --- SAVE ---
+  it("SAVE command returns +OK", () => {
+    expect(run(["SAVE"])).toBe("+OK\r\n");
+  });
+
+  it("SAVE with extra args returns error", () => {
+    expect(run(["SAVE", "extra"])).toMatch(/ERR/);
+  });
 });

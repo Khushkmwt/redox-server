@@ -39,6 +39,7 @@ import { pexpire } from "./pexpire.js";
 import { ttl } from "./ttl.js";
 import { pttl } from "./pttl.js";
 import { persist } from "./persist.js";
+import { save } from "./save.js";
 
 type Handler = (args: string[], store: Store) => Buffer;
 
@@ -77,6 +78,7 @@ const handlers: Record<string, Handler> = {
   TTL: ttl,
   PTTL: pttl,
   PERSIST: persist,
+  SAVE: save,
 };
 
 /**

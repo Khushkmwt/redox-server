@@ -1,0 +1,113 @@
+import fs from "node:fs";
+import path from "node:path";
+import type { Store } from "./store.js";
+
+export interface SnapshotData {
+  version: number;
+  savedAt: number;
+  entries: SnapshotEntry[];
+}
+
+export type SnapshotEntry =
+  | {
+      key: string;
+      type: "string";
+      value: string;
+      ttlMsRemaining?: number;
+    }
+  | {
+      key: string;
+      type: "hash";
+      fields: Record<string, string>;
+      ttlMsRemaining?: number;
+    };
+
+export function getDefaultDumpPath(): string {
+  return process.env.DUMP_PATH ?? path.join(process.cwd(), "data", "dump.json");
+}
+
+/**
+ * Save an atomic point-in-time snapshot of the in-memory store to disk.
+ * Uses atomic rename to prevent file corruption.
+ */
+export function saveSnapshot(
+  store: Store,
+  filePath = getDefaultDumpPath()
+): { keyCount: number; bytes: number } {
+  const dir = path.dirname(filePath);
+  if (!fs.existsSync(dir)) {
+    fs.mkdirSync(dir, { recursive: true });
+  }
+
+  const keys = store.keys("*");
+  const entries: SnapshotEntry[] = [];
+
+  for (const key of keys) {
+    const keyType = store.type(key);
+    const ttlMs = store.pttl(key);
+    const ttlMsRemaining = ttlMs > 0 ? ttlMs : undefined;
+
+    if (keyType === "string") {
+      const val = store.get(key);
+      if (val !== undefined) {
+        entries.push({ key, type: "string", value: val, ttlMsRemaining });
+      }
+    } else if (keyType === "hash") {
+      const pairs = store.hgetall(key);
+      entries.push({
+        key,
+        type: "hash",
+        fields: Object.fromEntries(pairs),
+        ttlMsRemaining,
+      });
+    }
+  }
+
+  const snapshot: SnapshotData = {
+    version: 1,
+    savedAt: Date.now(),
+    entries,
+  };
+
+  const json = JSON.stringify(snapshot, null, 2);
+  const tempPath = `${filePath}.tmp.${Date.now()}`;
+
+  fs.writeFileSync(tempPath, json, "utf8");
+  fs.renameSync(tempPath, filePath);
+
+  return { keyCount: entries.length, bytes: Buffer.byteLength(json, "utf8") };
+}
+
+/**
+ * Restore store state from a snapshot file if it exists.
+ */
+export function restoreSnapshot(
+  store: Store,
+  filePath = getDefaultDumpPath()
+): { restoredCount: number; elapsedMs: number } | null {
+  if (!fs.existsSync(filePath)) {
+    return null;
+  }
+
+  const start = performance.now();
+  const raw = fs.readFileSync(filePath, "utf8");
+  const snapshot = JSON.parse(raw) as SnapshotData;
+
+  let restoredCount = 0;
+
+  for (const item of snapshot.entries) {
+    if (item.type === "string") {
+      store.set(item.key, item.value, item.ttlMsRemaining);
+      restoredCount++;
+    } else if (item.type === "hash") {
+      store.hset(item.key, Object.entries(item.fields));
+      if (item.ttlMsRemaining) {
+        store.pexpire(item.key, item.ttlMsRemaining);
+      }
+      restoredCount++;
+    }
+  }
+
+  const elapsedMs = performance.now() - start;
+  return { restoredCount, elapsedMs };
+}

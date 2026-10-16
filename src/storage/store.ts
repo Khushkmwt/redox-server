@@ -28,7 +28,13 @@ class Store {
       ? "allkeys-lru"
       : "noeviction";
 
-  constructor() {
+  constructor(options?: { maxMemoryBytes?: number; evictionPolicy?: EvictionPolicy }) {
+    if (options?.maxMemoryBytes !== undefined) {
+      this.maxMemory = options.maxMemoryBytes;
+    }
+    if (options?.evictionPolicy !== undefined) {
+      this.evictionPolicy = options.evictionPolicy;
+    }
     this.startActiveExpiry();
   }
 
@@ -472,4 +478,4 @@ export {
 };
 
 export const store = new Store();
-export type { Store };
+export { Store };
