@@ -25,6 +25,16 @@ Full specification of all 19 Redis-compatible commands implemented in `redox-ser
 - [MGET](#mget)
 - [KEYS](#keys)
 - [COMMAND](#command)
+- [INFO](#info)
+- [HSET](#hset)
+- [HGET](#hget)
+- [HMGET](#hmget)
+- [HDEL](#hdel)
+- [HEXISTS](#hexists)
+- [HLEN](#hlen)
+- [HGETALL](#hgetall)
+- [HKEYS](#hkeys)
+- [HVALS](#hvals)
 
 ---
 
@@ -135,3 +145,54 @@ Full specification of all 19 Redis-compatible commands implemented in `redox-ser
   - `COMMAND`: Array of command names.
   - `COMMAND COUNT`: Total integer count of supported commands.
   - `COMMAND DOCS`: Empty array reply.
+
+### INFO
+- **Syntax**: `INFO [section]`
+- **Description**: Returns memory usage, maxmemory settings, eviction policy, and key metrics.
+- **Returns**: Bulk string formatted with Redis-compatible `# Memory` fields.
+
+### HSET
+- **Syntax**: `HSET key field value [field value ...]`
+- **Description**: Sets the specified fields to their respective values in the hash stored at key.
+- **Returns**: Integer count of fields that were added.
+
+### HGET
+- **Syntax**: `HGET key field`
+- **Description**: Returns the value associated with field in the hash stored at key.
+- **Returns**: Bulk string value, or `nil` (`$-1\r\n`) if field or key does not exist.
+
+### HMGET
+- **Syntax**: `HMGET key field [field ...]`
+- **Description**: Returns the values associated with the specified fields in the hash stored at key.
+- **Returns**: RESP2 Array of bulk strings or nulls.
+
+### HDEL
+- **Syntax**: `HDEL key field [field ...]`
+- **Description**: Removes the specified fields from the hash stored at key. If the hash becomes empty, the key is removed.
+- **Returns**: Integer count of fields that were removed.
+
+### HEXISTS
+- **Syntax**: `HEXISTS key field`
+- **Description**: Returns whether field exists in the hash stored at key.
+- **Returns**: `:1` if field exists, `:0` otherwise.
+
+### HLEN
+- **Syntax**: `HLEN key`
+- **Description**: Returns the number of fields contained in the hash stored at key.
+- **Returns**: Integer count.
+
+### HGETALL
+- **Syntax**: `HGETALL key`
+- **Description**: Returns all fields and values of the hash stored at key.
+- **Returns**: RESP2 Array of field-value pairs (`[f1, v1, f2, v2, ...]`).
+
+### HKEYS
+- **Syntax**: `HKEYS key`
+- **Description**: Returns all field names in the hash stored at key.
+- **Returns**: RESP2 Array of field names.
+
+### HVALS
+- **Syntax**: `HVALS key`
+- **Description**: Returns all values in the hash stored at key.
+- **Returns**: RESP2 Array of field values.
+

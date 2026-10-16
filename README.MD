@@ -61,6 +61,8 @@ Configure using environment variables or a `.env` file:
 | `MAX_CONNECTIONS` | `100` | Maximum simultaneous client connections |
 | `TIMEOUT` | `0` | Idle connection timeout in seconds (`0` disables) |
 | `LOG_LEVEL` | `INFO` | Logging verbosity (`DEBUG`, `INFO`, `WARN`, `ERROR`, `SILENT`) |
+| `MAX_MEMORY` | `0` | Max memory cap (e.g. `64mb`, `500kb`; `0` disables cap) |
+| `EVICTION_POLICY` | `noeviction` | Eviction behavior when memory cap reached (`noeviction`, `allkeys-lru`) |
 
 ---
 
@@ -142,9 +144,23 @@ nc 127.0.0.1 6379
 | `MGET key [key ...]` | Get multiple values in order | Array of bulk strings/nulls |
 | `KEYS pattern` | Match keys using glob pattern (`*`, `?`, `[abc]`) | Array of bulk strings |
 
+### Hashes
+| Command | Description | Response |
+|---|---|---|
+| `HSET key field value [f v ...]` | Set fields on a hash | Integer count of added fields |
+| `HGET key field` | Get value of a hash field | Bulk string or null |
+| `HMGET key field [field ...]` | Get multiple field values in order | Array of bulk strings/nulls |
+| `HDEL key field [field ...]` | Delete fields from a hash | Integer count removed |
+| `HEXISTS key field` | Check if field exists in hash | Integer (`1` or `0`) |
+| `HLEN key` | Total count of fields in hash | Integer |
+| `HGETALL key` | Return all field-value pairs | Array `[f1, v1, f2, v2, ...]` |
+| `HKEYS key` | List all field names in hash | Array of bulk strings |
+| `HVALS key` | List all values in hash | Array of bulk strings |
+
 ### Server & Meta
 | Command | Description | Response |
 |---|---|---|
+| `INFO [section]` | Report memory metrics and server diagnostics | Bulk string |
 | `COMMAND` | List all supported commands | Array of bulk strings |
 | `COMMAND COUNT` | Total number of commands | Integer count |
 | `COMMAND DOCS` | Return empty docs array for client probes | Array |
@@ -156,7 +172,7 @@ Command names are **case-insensitive**.
 ## Running tests & benchmark
 
 ```bash
-# Run full Vitest suite (105+ tests)
+# Run full Vitest suite (117+ tests)
 npm test
 
 # Run tests in watch mode

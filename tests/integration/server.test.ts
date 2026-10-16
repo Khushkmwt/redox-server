@@ -191,7 +191,7 @@ describe("integration: shared state", () => {
 describe("integration: error handling", () => {
   it("unknown command returns RESP2 error", async () => {
     const s = await connect();
-    const res = await sendCommand(s, "HGETALL");
+    const res = await sendCommand(s, "NONEXISTENT_CMD");
     expect(res).toMatch(/^-ERR/);
     s.destroy();
   });
@@ -248,4 +248,34 @@ describe("integration: multi-key and numeric commands", () => {
     s.destroy();
   });
 });
+
+describe("integration: hashes and info", () => {
+  it("HSET, HGET, and HGETALL over TCP", async () => {
+    const s = await connect();
+    const setRes = await sendCommand(s, "HSET", "user:100", "name", "Alice", "role", "Dev");
+    expect(setRes).toBe(":2\r\n");
+
+    const getRes = await sendCommand(s, "HGET", "user:100", "name");
+    expect(getRes).toBe("$5\r\nAlice\r\n");
+
+    const allRes = await sendCommand(s, "HGETALL", "user:100");
+    expect(allRes).toContain("name");
+    expect(allRes).toContain("Alice");
+    expect(allRes).toContain("role");
+    expect(allRes).toContain("Dev");
+
+    const typeRes = await sendCommand(s, "TYPE", "user:100");
+    expect(typeRes).toBe("+hash\r\n");
+    s.destroy();
+  });
+
+  it("INFO memory returns server diagnostics over TCP", async () => {
+    const s = await connect();
+    const infoRes = await sendCommand(s, "INFO", "memory");
+    expect(infoRes).toContain("# Memory");
+    expect(infoRes).toContain("used_memory:");
+    s.destroy();
+  });
+});
+
 

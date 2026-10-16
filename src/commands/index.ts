@@ -24,6 +24,16 @@ import { mset } from "./mset.js";
 import { mget } from "./mget.js";
 import { keys } from "./keys.js";
 import { command } from "./command.js";
+import { info } from "./info.js";
+import { hset } from "./hset.js";
+import { hget } from "./hget.js";
+import { hmget } from "./hmget.js";
+import { hdel } from "./hdel.js";
+import { hexists } from "./hexists.js";
+import { hlen } from "./hlen.js";
+import { hgetall } from "./hgetall.js";
+import { hkeys } from "./hkeys.js";
+import { hvals } from "./hvals.js";
 
 type Handler = (args: string[], store: Store) => Buffer;
 
@@ -47,6 +57,16 @@ const handlers: Record<string, Handler> = {
   MGET: mget,
   KEYS: keys,
   COMMAND: command,
+  INFO: info,
+  HSET: hset,
+  HGET: hget,
+  HMGET: hmget,
+  HDEL: hdel,
+  HEXISTS: hexists,
+  HLEN: hlen,
+  HGETALL: hgetall,
+  HKEYS: hkeys,
+  HVALS: hvals,
 };
 
 /**
@@ -73,6 +93,9 @@ export function dispatch(args: string[], store: Store): Buffer {
     return handler(args.slice(1), store);
   } catch (err: unknown) {
     const msg = err instanceof Error ? err.message : String(err);
+    if (msg.startsWith("WRONGTYPE") || msg.startsWith("OOM") || msg.startsWith("ERR")) {
+      return encode.error(msg);
+    }
     return encode.error(`ERR internal error: ${msg}`);
   }
 }

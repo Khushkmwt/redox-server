@@ -13,7 +13,7 @@ function run(cmd: string[]): string {
 describe("command dispatcher", () => {
   // --- Unknown / empty ---
   it("returns error for unknown command", () => {
-    expect(run(["HGETALL"])).toMatch(/ERR unknown command/);
+    expect(run(["NONEXISTENT_CMD"])).toMatch(/ERR unknown command/);
   });
 
   it("returns error for empty args", () => {

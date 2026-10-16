@@ -21,6 +21,16 @@ export const SUPPORTED_COMMANDS = [
   "MGET",
   "KEYS",
   "COMMAND",
+  "INFO",
+  "HSET",
+  "HGET",
+  "HMGET",
+  "HDEL",
+  "HEXISTS",
+  "HLEN",
+  "HGETALL",
+  "HKEYS",
+  "HVALS",
 ];
 
 // COMMAND [DOCS | COUNT | LIST]
