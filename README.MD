@@ -123,7 +123,7 @@ nc 127.0.0.1 6379
 ### String Operations
 | Command | Description | Response |
 |---|---|---|
-| `SET key value` | Store a string key-value pair | `+OK` |
+| `SET key value [EX s] [PX ms]` | Store a string key-value pair with optional TTL | `+OK` |
 | `GET key` | Retrieve value for key | Bulk string or null |
 | `APPEND key value` | Append value to key | New byte length (integer) |
 | `STRLEN key` | Get byte length of stored value | Integer length (0 if missing) |
@@ -157,6 +157,15 @@ nc 127.0.0.1 6379
 | `HKEYS key` | List all field names in hash | Array of bulk strings |
 | `HVALS key` | List all values in hash | Array of bulk strings |
 
+### Key Expiration & TTL
+| Command | Description | Response |
+|---|---|---|
+| `EXPIRE key seconds` | Set timeout on key in seconds | Integer (`1` if set, `0` if missing) |
+| `PEXPIRE key milliseconds` | Set timeout on key in milliseconds | Integer (`1` if set, `0` if missing) |
+| `TTL key` | Return remaining TTL in seconds (`-1` none, `-2` missing) | Integer |
+| `PTTL key` | Return remaining TTL in milliseconds | Integer |
+| `PERSIST key` | Remove timeout from key | Integer (`1` if removed, `0` if none) |
+
 ### Server & Meta
 | Command | Description | Response |
 |---|---|---|
@@ -172,7 +181,7 @@ Command names are **case-insensitive**.
 ## Running tests & benchmark
 
 ```bash
-# Run full Vitest suite (117+ tests)
+# Run full Vitest suite (126+ tests)
 npm test
 
 # Run tests in watch mode

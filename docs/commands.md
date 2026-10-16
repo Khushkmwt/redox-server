@@ -35,6 +35,11 @@ Full specification of all 19 Redis-compatible commands implemented in `redox-ser
 - [HGETALL](#hgetall)
 - [HKEYS](#hkeys)
 - [HVALS](#hvals)
+- [EXPIRE](#expire)
+- [PEXPIRE](#pexpire)
+- [TTL](#ttl)
+- [PTTL](#pttl)
+- [PERSIST](#persist)
 
 ---
 
@@ -195,4 +200,33 @@ Full specification of all 19 Redis-compatible commands implemented in `redox-ser
 - **Syntax**: `HVALS key`
 - **Description**: Returns all values in the hash stored at key.
 - **Returns**: RESP2 Array of field values.
+
+### EXPIRE
+- **Syntax**: `EXPIRE key seconds`
+- **Description**: Sets a timeout on key. After the timeout has expired, the key will automatically be deleted.
+- **Returns**: `:1` if timeout was set, `:0` if key does not exist.
+
+### PEXPIRE
+- **Syntax**: `PEXPIRE key milliseconds`
+- **Description**: Sets a timeout on key in milliseconds.
+- **Returns**: `:1` if timeout was set, `:0` if key does not exist.
+
+### TTL
+- **Syntax**: `TTL key`
+- **Description**: Returns the remaining time to live of a key in seconds.
+- **Returns**:
+  - Integer remaining seconds.
+  - `:-1` if the key exists but has no associated expire.
+  - `:-2` if the key does not exist or has expired.
+
+### PTTL
+- **Syntax**: `PTTL key`
+- **Description**: Returns the remaining time to live of a key in milliseconds.
+- **Returns**: Integer remaining ms, `:-1`, or `:-2`.
+
+### PERSIST
+- **Syntax**: `PERSIST key`
+- **Description**: Removes the existing timeout on key, making it permanent.
+- **Returns**: `:1` if timeout was removed, `:0` if key does not exist or has no timeout.
+
 

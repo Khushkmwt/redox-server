@@ -1,62 +1,36 @@
-// In-memory key-value store with real-time memory tracking,
-// LRU eviction, and support for Strings and Hashes.
+// In-memory key-value store coordinator.
+// Orchestrates keyspace lifecycle, memory budgeting, TTL expiry, and data types.
 
-export type ValueType = "string" | "hash";
-
-export interface StringEntry {
-  type: "string";
-  value: string;
-  lastAccessedAt: number;
-}
-
-export interface HashEntry {
-  type: "hash";
-  fields: Map<string, string>;
-  lastAccessedAt: number;
-}
-
-export type Entry = StringEntry | HashEntry;
-
-export type EvictionPolicy = "noeviction" | "allkeys-lru";
-
-const KEY_OVERHEAD = 32;
-const HASH_FIELD_OVERHEAD = 16;
-
-export function parseMemoryString(memStr?: string): number {
-  if (!memStr) return 0;
-  const match = memStr.trim().toLowerCase().match(/^(\d+(?:\.\d+)?)\s*(b|kb|mb|gb)?$/);
-  if (!match) return 0;
-  const num = parseFloat(match[1]);
-  const unit = match[2] || "b";
-  switch (unit) {
-    case "kb":
-      return Math.round(num * 1024);
-    case "mb":
-      return Math.round(num * 1024 * 1024);
-    case "gb":
-      return Math.round(num * 1024 * 1024 * 1024);
-    default:
-      return Math.round(num);
-  }
-}
-
-export function formatBytesHuman(bytes: number): string {
-  if (bytes < 1024) return `${bytes}B`;
-  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(2)}K`;
-  if (bytes < 1024 * 1024 * 1024) return `${(bytes / (1024 * 1024)).toFixed(2)}M`;
-  return `${(bytes / (1024 * 1024 * 1024)).toFixed(2)}G`;
-}
+import {
+  type Entry,
+  type StringEntry,
+  type HashEntry,
+  type ValueType,
+  type EvictionPolicy,
+} from "./types.js";
+import {
+  calculateEntryBytes,
+  parseMemoryString,
+  formatBytesHuman,
+} from "./memory.js";
+import { globToRegExp } from "./pattern.js";
 
 class Store {
   private readonly data = new Map<string, Entry>();
   private usedMemory = 0;
   private evictedKeys = 0;
+  private expiredKeys = 0;
+  private expiryTimer: NodeJS.Timeout | null = null;
 
   public maxMemory: number = parseMemoryString(process.env.MAX_MEMORY);
   public evictionPolicy: EvictionPolicy =
     (process.env.EVICTION_POLICY?.toLowerCase() as EvictionPolicy) === "allkeys-lru"
       ? "allkeys-lru"
       : "noeviction";
+
+  constructor() {
+    this.startActiveExpiry();
+  }
 
   get usedMemoryBytes(): number {
     return this.usedMemory;
@@ -66,17 +40,72 @@ class Store {
     return this.evictedKeys;
   }
 
-  private calculateEntryBytes(key: string, entry: Entry): number {
-    const keyBytes = Buffer.byteLength(key, "utf8") + KEY_OVERHEAD;
-    if (entry.type === "string") {
-      return keyBytes + Buffer.byteLength(entry.value, "utf8");
-    }
-    let total = keyBytes;
-    for (const [f, v] of entry.fields.entries()) {
-      total += Buffer.byteLength(f, "utf8") + Buffer.byteLength(v, "utf8") + HASH_FIELD_OVERHEAD;
-    }
-    return total;
+  get expiredKeysCount(): number {
+    return this.expiredKeys;
   }
+
+  // --- Expiration Lifecycle ---
+
+  /**
+   * Passive (lazy) expiration check.
+   * If key has expired, deletes it and returns true. Otherwise false.
+   */
+  private checkExpired(key: string): boolean {
+    const entry = this.data.get(key);
+    if (!entry || entry.expiresAt === undefined) return false;
+
+    if (Date.now() >= entry.expiresAt) {
+      const bytes = calculateEntryBytes(key, entry);
+      this.data.delete(key);
+      this.usedMemory = Math.max(0, this.usedMemory - bytes);
+      this.expiredKeys++;
+      return true;
+    }
+
+    return false;
+  }
+
+  /**
+   * Active (background) expiration worker. Periodically samples keys with TTL.
+   */
+  public startActiveExpiry(intervalMs = 100): void {
+    if (this.expiryTimer) return;
+    this.expiryTimer = setInterval(() => {
+      this.activeExpiryTick();
+    }, intervalMs);
+    this.expiryTimer.unref();
+  }
+
+  public stopActiveExpiry(): void {
+    if (this.expiryTimer) {
+      clearInterval(this.expiryTimer);
+      this.expiryTimer = null;
+    }
+  }
+
+  public activeExpiryTick(): number {
+    const now = Date.now();
+    let purged = 0;
+    let checked = 0;
+
+    for (const [key, entry] of this.data.entries()) {
+      if (entry.expiresAt !== undefined) {
+        checked++;
+        if (now >= entry.expiresAt) {
+          const bytes = calculateEntryBytes(key, entry);
+          this.data.delete(key);
+          this.usedMemory = Math.max(0, this.usedMemory - bytes);
+          this.expiredKeys++;
+          purged++;
+        }
+      }
+      if (checked >= 20) break; // Sample max 20 keys per tick like Redis
+    }
+
+    return purged;
+  }
+
+  // --- Memory Enforcement ---
 
   private ensureMemory(deltaBytes: number): void {
     if (this.maxMemory <= 0 || deltaBytes <= 0) return;
@@ -101,7 +130,7 @@ class Store {
 
       if (oldestKey) {
         const entry = this.data.get(oldestKey)!;
-        const entryBytes = this.calculateEntryBytes(oldestKey, entry);
+        const entryBytes = calculateEntryBytes(oldestKey, entry);
         this.data.delete(oldestKey);
         this.usedMemory = Math.max(0, this.usedMemory - entryBytes);
         this.evictedKeys++;
@@ -117,13 +146,16 @@ class Store {
 
   // --- String operations ---
 
-  set(key: string, value: string): void {
+  set(key: string, value: string, ttlMs?: number): void {
+    this.checkExpired(key);
+
     const now = Date.now();
-    const newEntry: StringEntry = { type: "string", value, lastAccessedAt: now };
-    const newBytes = this.calculateEntryBytes(key, newEntry);
+    const expiresAt = ttlMs !== undefined ? now + ttlMs : undefined;
+    const newEntry: StringEntry = { type: "string", value, lastAccessedAt: now, expiresAt };
+    const newBytes = calculateEntryBytes(key, newEntry);
 
     const oldEntry = this.data.get(key);
-    const oldBytes = oldEntry ? this.calculateEntryBytes(key, oldEntry) : 0;
+    const oldBytes = oldEntry ? calculateEntryBytes(key, oldEntry) : 0;
     const delta = newBytes - oldBytes;
 
     this.ensureMemory(delta);
@@ -133,6 +165,8 @@ class Store {
   }
 
   get(key: string): string | undefined {
+    if (this.checkExpired(key)) return undefined;
+
     const entry = this.data.get(key);
     if (!entry) return undefined;
     if (entry.type !== "string") {
@@ -142,9 +176,60 @@ class Store {
     return entry.value;
   }
 
+  // --- TTL operations ---
+
+  expire(key: string, seconds: number): boolean {
+    return this.pexpire(key, seconds * 1000);
+  }
+
+  pexpire(key: string, milliseconds: number): boolean {
+    if (this.checkExpired(key)) return false;
+
+    const entry = this.data.get(key);
+    if (!entry) return false;
+
+    if (milliseconds <= 0) {
+      this.del(key);
+      return true;
+    }
+
+    entry.expiresAt = Date.now() + milliseconds;
+    return true;
+  }
+
+  ttl(key: string): number {
+    const ms = this.pttl(key);
+    if (ms < 0) return ms;
+    return Math.ceil(ms / 1000);
+  }
+
+  pttl(key: string): number {
+    if (this.checkExpired(key)) return -2;
+
+    const entry = this.data.get(key);
+    if (!entry) return -2;
+
+    if (entry.expiresAt === undefined) return -1;
+
+    const remaining = entry.expiresAt - Date.now();
+    return remaining > 0 ? remaining : -2;
+  }
+
+  persist(key: string): boolean {
+    if (this.checkExpired(key)) return false;
+
+    const entry = this.data.get(key);
+    if (!entry || entry.expiresAt === undefined) return false;
+
+    delete entry.expiresAt;
+    return true;
+  }
+
   // --- Hash operations ---
 
   hset(key: string, fieldPairs: [string, string][]): number {
+    this.checkExpired(key);
+
     const now = Date.now();
     let entry = this.data.get(key);
 
@@ -153,7 +238,8 @@ class Store {
     }
 
     let createdCount = 0;
-    const oldBytes = entry ? this.calculateEntryBytes(key, entry) : 0;
+    const oldBytes = entry ? calculateEntryBytes(key, entry) : 0;
+    const expiresAt = entry?.expiresAt;
 
     const fieldsMap = entry ? new Map(entry.fields) : new Map<string, string>();
 
@@ -164,8 +250,8 @@ class Store {
       fieldsMap.set(f, v);
     }
 
-    const newEntry: HashEntry = { type: "hash", fields: fieldsMap, lastAccessedAt: now };
-    const newBytes = this.calculateEntryBytes(key, newEntry);
+    const newEntry: HashEntry = { type: "hash", fields: fieldsMap, lastAccessedAt: now, expiresAt };
+    const newBytes = calculateEntryBytes(key, newEntry);
     const delta = newBytes - oldBytes;
 
     this.ensureMemory(delta);
@@ -177,6 +263,8 @@ class Store {
   }
 
   hget(key: string, field: string): string | undefined {
+    if (this.checkExpired(key)) return undefined;
+
     const entry = this.data.get(key);
     if (!entry) return undefined;
     if (entry.type !== "hash") {
@@ -187,6 +275,8 @@ class Store {
   }
 
   hmget(key: string, fields: string[]): (string | undefined)[] {
+    if (this.checkExpired(key)) return fields.map(() => undefined);
+
     const entry = this.data.get(key);
     if (entry && entry.type !== "hash") {
       throw new Error("WRONGTYPE Operation against a key holding the wrong kind of value");
@@ -198,13 +288,15 @@ class Store {
   }
 
   hdel(key: string, fields: string[]): number {
+    if (this.checkExpired(key)) return 0;
+
     const entry = this.data.get(key);
     if (!entry) return 0;
     if (entry.type !== "hash") {
       throw new Error("WRONGTYPE Operation against a key holding the wrong kind of value");
     }
 
-    const oldBytes = this.calculateEntryBytes(key, entry);
+    const oldBytes = calculateEntryBytes(key, entry);
     let removed = 0;
 
     for (const f of fields) {
@@ -218,7 +310,7 @@ class Store {
         this.data.delete(key);
         this.usedMemory = Math.max(0, this.usedMemory - oldBytes);
       } else {
-        const newBytes = this.calculateEntryBytes(key, entry);
+        const newBytes = calculateEntryBytes(key, entry);
         this.usedMemory = Math.max(0, this.usedMemory - (oldBytes - newBytes));
         entry.lastAccessedAt = Date.now();
       }
@@ -228,6 +320,8 @@ class Store {
   }
 
   hexists(key: string, field: string): boolean {
+    if (this.checkExpired(key)) return false;
+
     const entry = this.data.get(key);
     if (!entry) return false;
     if (entry.type !== "hash") {
@@ -238,6 +332,8 @@ class Store {
   }
 
   hlen(key: string): number {
+    if (this.checkExpired(key)) return 0;
+
     const entry = this.data.get(key);
     if (!entry) return 0;
     if (entry.type !== "hash") {
@@ -248,6 +344,8 @@ class Store {
   }
 
   hgetall(key: string): [string, string][] {
+    if (this.checkExpired(key)) return [];
+
     const entry = this.data.get(key);
     if (!entry) return [];
     if (entry.type !== "hash") {
@@ -258,6 +356,8 @@ class Store {
   }
 
   hkeys(key: string): string[] {
+    if (this.checkExpired(key)) return [];
+
     const entry = this.data.get(key);
     if (!entry) return [];
     if (entry.type !== "hash") {
@@ -268,6 +368,8 @@ class Store {
   }
 
   hvals(key: string): string[] {
+    if (this.checkExpired(key)) return [];
+
     const entry = this.data.get(key);
     if (!entry) return [];
     if (entry.type !== "hash") {
@@ -277,14 +379,14 @@ class Store {
     return Array.from(entry.fields.values());
   }
 
-  // --- Common keyspace operations ---
+  // --- Keyspace operations ---
 
   del(...keys: string[]): number {
     let removed = 0;
     for (const key of keys) {
       const entry = this.data.get(key);
       if (entry) {
-        const bytes = this.calculateEntryBytes(key, entry);
+        const bytes = calculateEntryBytes(key, entry);
         this.data.delete(key);
         this.usedMemory = Math.max(0, this.usedMemory - bytes);
         removed++;
@@ -296,25 +398,26 @@ class Store {
   exists(...keys: string[]): number {
     let count = 0;
     for (const key of keys) {
-      if (this.data.has(key)) count++;
+      if (!this.checkExpired(key) && this.data.has(key)) count++;
     }
     return count;
   }
 
   type(key: string): "string" | "hash" | "none" {
+    if (this.checkExpired(key)) return "none";
     const entry = this.data.get(key);
     if (!entry) return "none";
     return entry.type;
   }
 
   keys(pattern = "*"): string[] {
-    if (pattern === "*") {
-      return Array.from(this.data.keys());
-    }
-    const regex = globToRegExp(pattern);
+    const isWildcard = pattern === "*";
+    const regex = isWildcard ? null : globToRegExp(pattern);
     const result: string[] = [];
+
     for (const key of this.data.keys()) {
-      if (regex.test(key)) {
+      if (this.checkExpired(key)) continue;
+      if (isWildcard || regex!.test(key)) {
         result.push(key);
       }
     }
@@ -322,6 +425,9 @@ class Store {
   }
 
   size(): number {
+    for (const key of this.data.keys()) {
+      this.checkExpired(key);
+    }
     return this.data.size;
   }
 
@@ -329,6 +435,7 @@ class Store {
     this.data.clear();
     this.usedMemory = 0;
     this.evictedKeys = 0;
+    this.expiredKeys = 0;
   }
 
   info(section?: string): string {
@@ -343,6 +450,7 @@ class Store {
       lines.push(`maxmemory_human:${formatBytesHuman(this.maxMemory)}`);
       lines.push(`maxmemory_policy:${this.evictionPolicy}`);
       lines.push(`evicted_keys:${this.evictedKeys}`);
+      lines.push(`expired_keys:${this.expiredKeys}`);
       lines.push(`total_keys:${this.data.size}`);
     }
 
@@ -350,33 +458,18 @@ class Store {
   }
 }
 
-/** Convert a Redis glob pattern to a JavaScript RegExp. */
-export function globToRegExp(pattern: string): RegExp {
-  let regexStr = "^";
-  for (let i = 0; i < pattern.length; i++) {
-    const c = pattern[i];
-    if (c === "*") {
-      regexStr += ".*";
-    } else if (c === "?") {
-      regexStr += ".";
-    } else if (c === "[") {
-      const close = pattern.indexOf("]", i + 1);
-      if (close !== -1) {
-        const inner = pattern.slice(i + 1, close);
-        regexStr += `[${inner.replace(/\\/g, "\\\\")}]`;
-        i = close;
-      } else {
-        regexStr += "\\[";
-      }
-    } else if ("\\.+*?^$()[]{}|".includes(c)) {
-      regexStr += `\\${c}`;
-    } else {
-      regexStr += c;
-    }
-  }
-  regexStr += "$";
-  return new RegExp(regexStr);
-}
+// Re-exports for clean modular access and full backward compatibility
+export {
+  type Entry,
+  type StringEntry,
+  type HashEntry,
+  type ValueType,
+  type EvictionPolicy,
+  calculateEntryBytes,
+  parseMemoryString,
+  formatBytesHuman,
+  globToRegExp,
+};
 
 export const store = new Store();
 export type { Store };

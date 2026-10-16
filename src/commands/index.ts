@@ -34,6 +34,11 @@ import { hlen } from "./hlen.js";
 import { hgetall } from "./hgetall.js";
 import { hkeys } from "./hkeys.js";
 import { hvals } from "./hvals.js";
+import { expire } from "./expire.js";
+import { pexpire } from "./pexpire.js";
+import { ttl } from "./ttl.js";
+import { pttl } from "./pttl.js";
+import { persist } from "./persist.js";
 
 type Handler = (args: string[], store: Store) => Buffer;
 
@@ -67,6 +72,11 @@ const handlers: Record<string, Handler> = {
   HGETALL: hgetall,
   HKEYS: hkeys,
   HVALS: hvals,
+  EXPIRE: expire,
+  PEXPIRE: pexpire,
+  TTL: ttl,
+  PTTL: pttl,
+  PERSIST: persist,
 };
 
 /**

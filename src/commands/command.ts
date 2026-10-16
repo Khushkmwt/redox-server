@@ -31,6 +31,11 @@ export const SUPPORTED_COMMANDS = [
   "HGETALL",
   "HKEYS",
   "HVALS",
+  "EXPIRE",
+  "PEXPIRE",
+  "TTL",
+  "PTTL",
+  "PERSIST",
 ];
 
 // COMMAND [DOCS | COUNT | LIST]

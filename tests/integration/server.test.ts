@@ -276,6 +276,25 @@ describe("integration: hashes and info", () => {
     expect(infoRes).toContain("used_memory:");
     s.destroy();
   });
+
+  it("EXPIRE and TTL over TCP", async () => {
+    const s = await connect();
+    await sendCommand(s, "SET", "mykey", "val");
+    const expRes = await sendCommand(s, "EXPIRE", "mykey", "60");
+    expect(expRes).toBe(":1\r\n");
+
+    const ttlRes = await sendCommand(s, "TTL", "mykey");
+    const ttlVal = parseInt(ttlRes.slice(1, -2), 10);
+    expect(ttlVal).toBeGreaterThan(0);
+    expect(ttlVal).toBeLessThanOrEqual(60);
+
+    const persistRes = await sendCommand(s, "PERSIST", "mykey");
+    expect(persistRes).toBe(":1\r\n");
+
+    const ttlAfter = await sendCommand(s, "TTL", "mykey");
+    expect(ttlAfter).toBe(":-1\r\n");
+    s.destroy();
+  });
 });
 
 
