@@ -14,6 +14,17 @@ Clients connect over TCP and communicate using the **RESP2** wire protocol — t
 
 ---
 
+## Documentation
+
+Comprehensive documentation is available in the [`docs/`](./docs) directory:
+
+- [**Architecture Guide**](./docs/architecture.md) — System components, connection lifecycle, and parser state machine.
+- [**Command Reference**](./docs/commands.md) — Full specification for all 19 supported commands with examples.
+- [**RESP2 Protocol**](./docs/protocol.md) — Wire-level protocol details, framing, and types.
+- [**Configuration Guide**](./docs/configuration.md) — Environment variables, local setup, and Docker deployment.
+
+---
+
 ## Installation
 
 ```bash
