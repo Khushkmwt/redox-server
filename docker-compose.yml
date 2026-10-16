@@ -1,0 +1,23 @@
+services:
+  redox:
+    build:
+      context: .
+      target: production
+    container_name: redox-server
+    ports:
+      - "${PORT:-6379}:6379"
+    environment:
+      HOST: "0.0.0.0"
+      PORT: "6379"
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "node", "-e",
+        "const net = require('net');
+         const s = net.createConnection(6379, '127.0.0.1', () => { s.write('*1\\r\\n$4\\r\\nPING\\r\\n'); });
+         s.on('data', () => { s.destroy(); process.exit(0); });
+         s.on('error', () => process.exit(1));
+         setTimeout(() => process.exit(1), 3000);"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+      start_period: 5s
