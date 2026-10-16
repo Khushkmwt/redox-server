@@ -6,7 +6,7 @@ WORKDIR /app
 COPY package*.json ./
 RUN npm ci
 
-COPY tsconfig.json ./
+COPY tsconfig*.json ./
 COPY src/ ./src/
 
 RUN npm run build
@@ -31,4 +31,4 @@ EXPOSE 6379
 ENV HOST=0.0.0.0
 ENV PORT=6379
 
-CMD ["node", "dist/src/server.js"]
+CMD ["node", "dist/server.js"]
