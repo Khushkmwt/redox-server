@@ -69,9 +69,15 @@ export class RespParser {
       return true; // consumed the bad line, keep going (after reset)
     }
 
-    const count = parseInt(line.slice(1), 10);
+    const countStr = line.slice(1);
+    if (!/^\d+$/.test(countStr)) {
+      this.error(`Invalid array count: ${countStr}`);
+      return true;
+    }
+
+    const count = parseInt(countStr, 10);
     if (isNaN(count) || count < 0) {
-      this.error(`Invalid array count: ${line.slice(1)}`);
+      this.error(`Invalid array count: ${countStr}`);
       return true;
     }
     if (count > MAX_ARRAY_SIZE) {
@@ -101,9 +107,15 @@ export class RespParser {
       return true;
     }
 
-    const len = parseInt(line.slice(1), 10);
+    const lenStr = line.slice(1);
+    if (!/^\d+$/.test(lenStr)) {
+      this.error(`Invalid bulk length: ${lenStr}`);
+      return true;
+    }
+
+    const len = parseInt(lenStr, 10);
     if (isNaN(len) || len < 0) {
-      this.error(`Invalid bulk length: ${line.slice(1)}`);
+      this.error(`Invalid bulk length: ${lenStr}`);
       return true;
     }
     if (len > MAX_BULK_BYTES) {

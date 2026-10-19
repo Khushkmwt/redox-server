@@ -10,12 +10,14 @@ function crlf(s: string): Buffer {
 
 /** +OK\r\n  (or any simple string) */
 function simpleString(s: string): Buffer {
-  return crlf(`+${s}`);
+  const sanitized = s.replace(/[\r\n]+/g, " ");
+  return crlf(`+${sanitized}`);
 }
 
 /** -ERR message\r\n */
 function error(msg: string): Buffer {
-  return crlf(`-${msg}`);
+  const sanitized = msg.replace(/[\r\n]+/g, " ");
+  return crlf(`-${sanitized}`);
 }
 
 /** :42\r\n */

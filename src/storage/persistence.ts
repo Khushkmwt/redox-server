@@ -96,17 +96,31 @@ export function restoreSnapshot(
   const snapshot = JSON.parse(raw) as SnapshotData;
 
   let restoredCount = 0;
+  const now = Date.now();
+  const elapsedDowntime = Math.max(0, now - snapshot.savedAt);
 
   for (const item of snapshot.entries) {
+    let effectiveTtl: number | undefined;
+    if (item.ttlMsRemaining !== undefined) {
+      effectiveTtl = item.ttlMsRemaining - elapsedDowntime;
+      if (effectiveTtl <= 0) {
+        // Key expired while server was offline
+        continue;
+      }
+    }
+
     if (item.type === "string") {
-      store.set(item.key, item.value, item.ttlMsRemaining);
+      store.set(item.key, item.value, effectiveTtl);
       restoredCount++;
     } else if (item.type === "hash") {
-      store.hset(item.key, Object.entries(item.fields));
-      if (item.ttlMsRemaining) {
-        store.pexpire(item.key, item.ttlMsRemaining);
+      const fieldPairs = Object.entries(item.fields);
+      if (fieldPairs.length > 0) {
+        store.hset(item.key, fieldPairs);
+        if (effectiveTtl !== undefined) {
+          store.pexpire(item.key, effectiveTtl);
+        }
+        restoredCount++;
       }
-      restoredCount++;
     }
   }
 

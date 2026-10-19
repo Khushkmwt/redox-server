@@ -7,6 +7,10 @@ export function expire(args: string[], store: Store): Buffer {
     return encode.error("ERR wrong number of arguments for 'expire' command");
   }
 
+  if (!/^-?\d+$/.test(args[1])) {
+    return encode.error("ERR value is not an integer or out of range");
+  }
+
   const seconds = parseInt(args[1], 10);
   if (isNaN(seconds)) {
     return encode.error("ERR value is not an integer or out of range");

@@ -12,6 +12,9 @@ export function set(args: string[], store: Store): Buffer {
 
   if (args.length === 4) {
     const opt = args[2].toUpperCase();
+    if (!/^\d+$/.test(args[3])) {
+      return encode.error("ERR value is not an integer or out of range");
+    }
     const duration = parseInt(args[3], 10);
 
     if (isNaN(duration) || duration <= 0) {

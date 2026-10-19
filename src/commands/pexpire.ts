@@ -7,6 +7,10 @@ export function pexpire(args: string[], store: Store): Buffer {
     return encode.error("ERR wrong number of arguments for 'pexpire' command");
   }
 
+  if (!/^-?\d+$/.test(args[1])) {
+    return encode.error("ERR value is not an integer or out of range");
+  }
+
   const ms = parseInt(args[1], 10);
   if (isNaN(ms)) {
     return encode.error("ERR value is not an integer or out of range");

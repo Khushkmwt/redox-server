@@ -30,7 +30,10 @@ export function applyIntegerDelta(
   }
 
   const result = val + delta;
-  store.set(key, result.toString());
+  if (result > 9223372036854775807n || result < -9223372036854775808n) {
+    return encode.error("ERR increment or decrement would overflow");
+  }
+  store.set(key, result.toString(), undefined, true);
   return encode.integer(result);
 }
 
