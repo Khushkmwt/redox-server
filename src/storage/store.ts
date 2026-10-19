@@ -32,15 +32,19 @@ class Store {
     (process.env.EVICTION_POLICY?.toLowerCase() as EvictionPolicy) === "allkeys-lru"
       ? "allkeys-lru"
       : "noeviction";
+  public port: number = Number(process.env.PORT ?? 6379);
 
   private ttlKeys = new Set<string>();
 
-  constructor(options?: { maxMemoryBytes?: number; evictionPolicy?: EvictionPolicy }) {
+  constructor(options?: { maxMemoryBytes?: number; evictionPolicy?: EvictionPolicy; port?: number }) {
     if (options?.maxMemoryBytes !== undefined) {
       this.maxMemory = options.maxMemoryBytes;
     }
     if (options?.evictionPolicy !== undefined) {
       this.evictionPolicy = options.evictionPolicy;
+    }
+    if (options?.port !== undefined) {
+      this.port = options.port;
     }
     this.startActiveExpiry();
   }
@@ -125,10 +129,12 @@ class Store {
     return purged;
   }
 
-  // --- Memory Enforcement ---
-
   private ensureMemory(deltaBytes: number, excludeKeys?: string | Set<string>): void {
     if (this.maxMemory <= 0 || deltaBytes <= 0) return;
+
+    if (deltaBytes > this.maxMemory) {
+      throw new Error("OOM command not allowed when used memory > 'maxmemory'");
+    }
 
     if (this.usedMemory + deltaBytes <= this.maxMemory) return;
 
@@ -151,12 +157,14 @@ class Store {
       let oldestKey: string | null = null;
       let oldestTime = Infinity;
 
+      let sampleCount = 0;
       for (const [k, entry] of this.data.entries()) {
         if (excludeSet?.has(k)) continue;
         if (entry.lastAccessedAt < oldestTime) {
           oldestTime = entry.lastAccessedAt;
           oldestKey = k;
         }
+        if (++sampleCount >= 16) break;
       }
 
       if (oldestKey) {
@@ -525,7 +533,7 @@ class Store {
         "# Server",
         "redox_version:1.0.0",
         `process_id:${process.pid}`,
-        `tcp_port:${process.env.PORT ?? 6379}`,
+        `tcp_port:${this.port}`,
         `uptime_in_seconds:${uptimeSec}`,
       ].join("\r\n");
     };

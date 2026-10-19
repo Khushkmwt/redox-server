@@ -147,4 +147,54 @@ describe("Audit Fixes Verification Suite", () => {
     parser.feed(Buffer.from("*1\r\n$2junk\r\n", "utf8"));
     expect(errors).toContain("Invalid bulk length: 2junk");
   });
+
+  it("Issue #12: oversized write does not wipe existing keys before failing with OOM", () => {
+    // 300 bytes max memory
+    const store = new Store({ maxMemoryBytes: 300, evictionPolicy: "allkeys-lru" });
+    store.set("important_key", "important_value");
+
+    // Attempt to store payload larger than entire maxMemory
+    expect(() => store.set("giant", "x".repeat(500))).toThrow(/OOM command not allowed/);
+
+    // Existing key MUST NOT be evicted
+    expect(store.get("important_key")).toBe("important_value");
+  });
+
+  it("Issue #13: MGET returns nil on hash keys instead of throwing WRONGTYPE", () => {
+    const store = new Store();
+    store.set("str", "val");
+    store.hset("myhash", [["f1", "v1"]]);
+
+    const res = dispatch(["MGET", "str", "myhash", "nonexistent"], store).toString("utf8");
+    expect(res).toContain("$3\r\nval\r\n$-1\r\n$-1\r\n");
+  });
+
+  it("Issue #15: FLUSHALL unlinks snapshot file", () => {
+    const store = new Store();
+    store.set("k", "v");
+
+    const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), "redox-flush-"));
+    const dumpPath = path.join(tmpDir, "dump.json");
+    saveSnapshot(store, dumpPath);
+    expect(fs.existsSync(dumpPath)).toBe(true);
+
+    dispatch(["FLUSHALL"], store);
+    expect(store.size()).toBe(0);
+
+    fs.rmSync(tmpDir, { recursive: true, force: true });
+  });
+
+  it("Issue #18: RespParser enforces max buffer byte limit", () => {
+    let errorMsg = "";
+    const parser = new RespParser(
+      () => {},
+      (err) => {
+        errorMsg = err;
+      }
+    );
+
+    const oversizedChunk = Buffer.alloc(65 * 1024 * 1024);
+    parser.feed(oversizedChunk);
+    expect(errorMsg).toContain("input buffer limit exceeded");
+  });
 });

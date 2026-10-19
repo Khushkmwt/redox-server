@@ -18,6 +18,7 @@
 
 const MAX_BULK_BYTES = 512 * 1024 * 1024; // 512 MiB hard limit per argument
 const MAX_ARRAY_SIZE = 1024; // maximum arguments per command
+const MAX_BUFFER_BYTES = 64 * 1024 * 1024; // 64 MB maximum unparsed stream buffer
 
 type State = "ARRAY_HEADER" | "BULK_HEADER" | "BULK_DATA";
 
@@ -34,8 +35,15 @@ export class RespParser {
   ) {}
 
   feed(chunk: Buffer): void {
+    if (this.buf.length + chunk.length > MAX_BUFFER_BYTES) {
+      this.error("ERR input buffer limit exceeded");
+      return;
+    }
     this.buf = Buffer.concat([this.buf, chunk]);
     this.process();
+    if (this.buf.length === 0) {
+      this.buf = Buffer.alloc(0);
+    }
   }
 
   private process(): void {
