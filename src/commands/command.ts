@@ -52,7 +52,21 @@ export function command(args: string[], _store: Store): Buffer {
     return encode.array([]);
   }
 
-  // COMMAND or COMMAND LIST returns array of command names as bulk strings
-  const items = SUPPORTED_COMMANDS.map((name) => encode.bulkString(name));
-  return encode.array(items);
+  if (sub === "LIST") {
+    const items = SUPPORTED_COMMANDS.map((name) => encode.bulkString(name));
+    return encode.array(items);
+  }
+
+  // Bare COMMAND returns standard Redis nested command specifications
+  const matrix = SUPPORTED_COMMANDS.map((name) => {
+    return encode.array([
+      encode.bulkString(name.toUpperCase()),
+      encode.integer(1),
+      encode.array([encode.simpleString("fast")]),
+      encode.integer(1),
+      encode.integer(1),
+      encode.integer(1),
+    ]);
+  });
+  return encode.array(matrix);
 }

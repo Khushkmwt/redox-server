@@ -108,7 +108,22 @@ function shutdown() {
   } catch (err: unknown) {
     logger.error(`[persistence] Failed to save snapshot on shutdown: ${err}`);
   }
-  server.close(() => process.exit(0));
+
+  const forceTimeout = setTimeout(() => {
+    logger.warn("Forcing exit after shutdown timeout");
+    process.exit(0);
+  }, 3000);
+  forceTimeout.unref();
+
+  const serverWithClose = server as net.Server & { closeAllConnections?: () => void };
+  if (typeof serverWithClose.closeAllConnections === "function") {
+    serverWithClose.closeAllConnections();
+  }
+
+  server.close(() => {
+    clearTimeout(forceTimeout);
+    process.exit(0);
+  });
 }
 
 process.on("SIGINT", shutdown);

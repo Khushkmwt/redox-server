@@ -2,25 +2,14 @@ import fs from "node:fs";
 import path from "node:path";
 import type { Store } from "./store.js";
 
-export interface SnapshotData {
-  version: number;
-  savedAt: number;
-  entries: SnapshotEntry[];
-}
+import {
+  type SnapshotData,
+  type SnapshotEntry,
+  type SnapshotSaveResult,
+  type SnapshotRestoreResult,
+} from "../types/persistence.js";
 
-export type SnapshotEntry =
-  | {
-      key: string;
-      type: "string";
-      value: string;
-      ttlMsRemaining?: number;
-    }
-  | {
-      key: string;
-      type: "hash";
-      fields: Record<string, string>;
-      ttlMsRemaining?: number;
-    };
+export type { SnapshotData, SnapshotEntry, SnapshotSaveResult, SnapshotRestoreResult };
 
 export function getDefaultDumpPath(): string {
   return process.env.DUMP_PATH ?? path.join(process.cwd(), "data", "dump.json");
@@ -96,17 +85,31 @@ export function restoreSnapshot(
   const snapshot = JSON.parse(raw) as SnapshotData;
 
   let restoredCount = 0;
+  const now = Date.now();
+  const elapsedDowntime = Math.max(0, now - snapshot.savedAt);
 
   for (const item of snapshot.entries) {
+    let effectiveTtl: number | undefined;
+    if (item.ttlMsRemaining !== undefined) {
+      effectiveTtl = item.ttlMsRemaining - elapsedDowntime;
+      if (effectiveTtl <= 0) {
+        // Key expired while server was offline
+        continue;
+      }
+    }
+
     if (item.type === "string") {
-      store.set(item.key, item.value, item.ttlMsRemaining);
+      store.set(item.key, item.value, effectiveTtl);
       restoredCount++;
     } else if (item.type === "hash") {
-      store.hset(item.key, Object.entries(item.fields));
-      if (item.ttlMsRemaining) {
-        store.pexpire(item.key, item.ttlMsRemaining);
+      const fieldPairs = Object.entries(item.fields);
+      if (fieldPairs.length > 0) {
+        store.hset(item.key, fieldPairs);
+        if (effectiveTtl !== undefined) {
+          store.pexpire(item.key, effectiveTtl);
+        }
+        restoredCount++;
       }
-      restoredCount++;
     }
   }
 

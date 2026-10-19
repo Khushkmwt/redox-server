@@ -32,13 +32,19 @@ class Store {
     (process.env.EVICTION_POLICY?.toLowerCase() as EvictionPolicy) === "allkeys-lru"
       ? "allkeys-lru"
       : "noeviction";
+  public port: number = Number(process.env.PORT ?? 6379);
 
-  constructor(options?: { maxMemoryBytes?: number; evictionPolicy?: EvictionPolicy }) {
+  private ttlKeys = new Set<string>();
+
+  constructor(options?: { maxMemoryBytes?: number; evictionPolicy?: EvictionPolicy; port?: number }) {
     if (options?.maxMemoryBytes !== undefined) {
       this.maxMemory = options.maxMemoryBytes;
     }
     if (options?.evictionPolicy !== undefined) {
       this.evictionPolicy = options.evictionPolicy;
+    }
+    if (options?.port !== undefined) {
+      this.port = options.port;
     }
     this.startActiveExpiry();
   }
@@ -68,6 +74,7 @@ class Store {
     if (Date.now() >= entry.expiresAt) {
       const bytes = calculateEntryBytes(key, entry);
       this.data.delete(key);
+      this.ttlKeys.delete(key);
       this.usedMemory = Math.max(0, this.usedMemory - bytes);
       this.expiredKeys++;
       return true;
@@ -99,27 +106,35 @@ class Store {
     let purged = 0;
     let checked = 0;
 
-    for (const [key, entry] of this.data.entries()) {
-      if (entry.expiresAt !== undefined) {
-        checked++;
-        if (now >= entry.expiresAt) {
-          const bytes = calculateEntryBytes(key, entry);
-          this.data.delete(key);
-          this.usedMemory = Math.max(0, this.usedMemory - bytes);
-          this.expiredKeys++;
-          purged++;
-        }
+    for (const key of this.ttlKeys) {
+      checked++;
+      const entry = this.data.get(key);
+      if (!entry || entry.expiresAt === undefined) {
+        this.ttlKeys.delete(key);
+      } else if (now >= entry.expiresAt) {
+        const bytes = calculateEntryBytes(key, entry);
+        this.data.delete(key);
+        this.ttlKeys.delete(key);
+        this.usedMemory = Math.max(0, this.usedMemory - bytes);
+        this.expiredKeys++;
+        purged++;
+      } else {
+        // Rotate checked key to back of Set so subsequent ticks visit remaining keys
+        this.ttlKeys.delete(key);
+        this.ttlKeys.add(key);
       }
-      if (checked >= 20) break; // Sample max 20 keys per tick like Redis
+      if (checked >= 20) break;
     }
 
     return purged;
   }
 
-  // --- Memory Enforcement ---
-
-  private ensureMemory(deltaBytes: number): void {
+  private ensureMemory(deltaBytes: number, excludeKeys?: string | Set<string>): void {
     if (this.maxMemory <= 0 || deltaBytes <= 0) return;
+
+    if (deltaBytes > this.maxMemory) {
+      throw new Error("OOM command not allowed when used memory > 'maxmemory'");
+    }
 
     if (this.usedMemory + deltaBytes <= this.maxMemory) return;
 
@@ -127,22 +142,36 @@ class Store {
       throw new Error("OOM command not allowed when used memory > 'maxmemory'");
     }
 
+    const excludeSet =
+      excludeKeys instanceof Set
+        ? excludeKeys
+        : excludeKeys
+          ? new Set([excludeKeys])
+          : null;
+
     // allkeys-lru eviction loop
-    while (this.usedMemory + deltaBytes > this.maxMemory && this.data.size > 0) {
+    while (
+      this.usedMemory + deltaBytes > this.maxMemory &&
+      this.data.size > (excludeSet?.size ?? 0)
+    ) {
       let oldestKey: string | null = null;
       let oldestTime = Infinity;
 
+      let sampleCount = 0;
       for (const [k, entry] of this.data.entries()) {
+        if (excludeSet?.has(k)) continue;
         if (entry.lastAccessedAt < oldestTime) {
           oldestTime = entry.lastAccessedAt;
           oldestKey = k;
         }
+        if (++sampleCount >= 16) break;
       }
 
       if (oldestKey) {
         const entry = this.data.get(oldestKey)!;
         const entryBytes = calculateEntryBytes(oldestKey, entry);
         this.data.delete(oldestKey);
+        this.ttlKeys.delete(oldestKey);
         this.usedMemory = Math.max(0, this.usedMemory - entryBytes);
         this.evictedKeys++;
       } else {
@@ -157,22 +186,62 @@ class Store {
 
   // --- String operations ---
 
-  set(key: string, value: string, ttlMs?: number): void {
+  set(key: string, value: string, ttlMs?: number, keepTtl?: boolean): void {
     this.checkExpired(key);
 
     const now = Date.now();
-    const expiresAt = ttlMs !== undefined ? now + ttlMs : undefined;
+    const oldEntry = this.data.get(key);
+    let expiresAt: number | undefined;
+
+    if (keepTtl) {
+      expiresAt = oldEntry?.expiresAt;
+    } else {
+      expiresAt = ttlMs !== undefined ? now + ttlMs : undefined;
+    }
+
     const newEntry: StringEntry = { type: "string", value, lastAccessedAt: now, expiresAt };
     const newBytes = calculateEntryBytes(key, newEntry);
-
-    const oldEntry = this.data.get(key);
     const oldBytes = oldEntry ? calculateEntryBytes(key, oldEntry) : 0;
     const delta = newBytes - oldBytes;
 
-    this.ensureMemory(delta);
+    this.ensureMemory(delta, key);
 
     this.data.set(key, newEntry);
+    if (expiresAt !== undefined) {
+      this.ttlKeys.add(key);
+    } else {
+      this.ttlKeys.delete(key);
+    }
     this.usedMemory += delta;
+  }
+
+  mset(pairs: [string, string][]): void {
+    const now = Date.now();
+    const finalEntries = new Map<string, StringEntry>();
+
+    for (const [key, value] of pairs) {
+      this.checkExpired(key);
+      finalEntries.set(key, { type: "string", value, lastAccessedAt: now });
+    }
+
+    let netDelta = 0;
+    const excludeKeys = new Set<string>();
+
+    for (const [key, newEntry] of finalEntries) {
+      excludeKeys.add(key);
+      const newBytes = calculateEntryBytes(key, newEntry);
+      const oldEntry = this.data.get(key);
+      const oldBytes = oldEntry ? calculateEntryBytes(key, oldEntry) : 0;
+      netDelta += newBytes - oldBytes;
+    }
+
+    this.ensureMemory(netDelta, excludeKeys);
+
+    for (const [key, newEntry] of finalEntries) {
+      this.data.set(key, newEntry);
+      this.ttlKeys.delete(key);
+    }
+    this.usedMemory += netDelta;
   }
 
   get(key: string): string | undefined {
@@ -205,6 +274,7 @@ class Store {
     }
 
     entry.expiresAt = Date.now() + milliseconds;
+    this.ttlKeys.add(key);
     return true;
   }
 
@@ -233,6 +303,7 @@ class Store {
     if (!entry || entry.expiresAt === undefined) return false;
 
     delete entry.expiresAt;
+    this.ttlKeys.delete(key);
     return true;
   }
 
@@ -265,9 +336,12 @@ class Store {
     const newBytes = calculateEntryBytes(key, newEntry);
     const delta = newBytes - oldBytes;
 
-    this.ensureMemory(delta);
+    this.ensureMemory(delta, key);
 
     this.data.set(key, newEntry);
+    if (expiresAt !== undefined) {
+      this.ttlKeys.add(key);
+    }
     this.usedMemory += delta;
 
     return createdCount;
@@ -395,10 +469,12 @@ class Store {
   del(...keys: string[]): number {
     let removed = 0;
     for (const key of keys) {
+      if (this.checkExpired(key)) continue;
       const entry = this.data.get(key);
       if (entry) {
         const bytes = calculateEntryBytes(key, entry);
         this.data.delete(key);
+        this.ttlKeys.delete(key);
         this.usedMemory = Math.max(0, this.usedMemory - bytes);
         removed++;
       }
@@ -436,14 +512,12 @@ class Store {
   }
 
   size(): number {
-    for (const key of this.data.keys()) {
-      this.checkExpired(key);
-    }
     return this.data.size;
   }
 
   flushAll(): void {
     this.data.clear();
+    this.ttlKeys.clear();
     this.usedMemory = 0;
     this.evictedKeys = 0;
     this.expiredKeys = 0;
@@ -459,7 +533,7 @@ class Store {
         "# Server",
         "redox_version:1.0.0",
         `process_id:${process.pid}`,
-        `tcp_port:${process.env.PORT ?? 6379}`,
+        `tcp_port:${this.port}`,
         `uptime_in_seconds:${uptimeSec}`,
       ].join("\r\n");
     };

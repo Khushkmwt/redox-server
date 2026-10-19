@@ -16,8 +16,12 @@
 // On unrecoverable framing errors the parser calls `onError` and resets,
 // allowing the connection to return a RESP2 error without crashing.
 
-const MAX_BULK_BYTES = 512 * 1024 * 1024; // 512 MiB hard limit per argument
-const MAX_ARRAY_SIZE = 1024; // maximum arguments per command
+import {
+  MAX_ARRAY_SIZE,
+  MAX_BULK_BYTES,
+  MAX_BUFFER_BYTES,
+} from "../utils/constants.js";
+import { isPositiveIntegerString } from "../utils/validators.js";
 
 type State = "ARRAY_HEADER" | "BULK_HEADER" | "BULK_DATA";
 
@@ -34,8 +38,15 @@ export class RespParser {
   ) {}
 
   feed(chunk: Buffer): void {
+    if (this.buf.length + chunk.length > MAX_BUFFER_BYTES) {
+      this.error("ERR input buffer limit exceeded");
+      return;
+    }
     this.buf = Buffer.concat([this.buf, chunk]);
     this.process();
+    if (this.buf.length === 0) {
+      this.buf = Buffer.alloc(0);
+    }
   }
 
   private process(): void {
@@ -69,9 +80,15 @@ export class RespParser {
       return true; // consumed the bad line, keep going (after reset)
     }
 
-    const count = parseInt(line.slice(1), 10);
+    const countStr = line.slice(1);
+    if (!isPositiveIntegerString(countStr)) {
+      this.error(`Invalid array count: ${countStr}`);
+      return true;
+    }
+
+    const count = parseInt(countStr, 10);
     if (isNaN(count) || count < 0) {
-      this.error(`Invalid array count: ${line.slice(1)}`);
+      this.error(`Invalid array count: ${countStr}`);
       return true;
     }
     if (count > MAX_ARRAY_SIZE) {
@@ -101,9 +118,15 @@ export class RespParser {
       return true;
     }
 
-    const len = parseInt(line.slice(1), 10);
+    const lenStr = line.slice(1);
+    if (!isPositiveIntegerString(lenStr)) {
+      this.error(`Invalid bulk length: ${lenStr}`);
+      return true;
+    }
+
+    const len = parseInt(lenStr, 10);
     if (isNaN(len) || len < 0) {
-      this.error(`Invalid bulk length: ${line.slice(1)}`);
+      this.error(`Invalid bulk length: ${lenStr}`);
       return true;
     }
     if (len > MAX_BULK_BYTES) {

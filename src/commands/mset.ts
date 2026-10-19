@@ -7,9 +7,16 @@ export function mset(args: string[], store: Store): Buffer {
     return encode.error("ERR wrong number of arguments for 'mset' command");
   }
 
+  const pairs: [string, string][] = [];
   for (let i = 0; i < args.length; i += 2) {
-    store.set(args[i], args[i + 1]);
+    pairs.push([args[i], args[i + 1]]);
   }
 
-  return encode.simpleString("OK");
+  try {
+    store.mset(pairs);
+    return encode.simpleString("OK");
+  } catch (err: unknown) {
+    const msg = err instanceof Error ? err.message : String(err);
+    return encode.error(msg);
+  }
 }
