@@ -115,8 +115,9 @@ function shutdown() {
   }, 3000);
   forceTimeout.unref();
 
-  if (typeof server.closeAllConnections === "function") {
-    server.closeAllConnections();
+  const serverWithClose = server as net.Server & { closeAllConnections?: () => void };
+  if (typeof serverWithClose.closeAllConnections === "function") {
+    serverWithClose.closeAllConnections();
   }
 
   server.close(() => {
