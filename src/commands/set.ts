@@ -1,5 +1,6 @@
 import { encode } from "../protocol/resp-encoder.js";
 import type { Store } from "../storage/store.js";
+import { isPositiveIntegerString } from "../utils/validators.js";
 
 // SET key value [EX seconds] [PX milliseconds]
 export function set(args: string[], store: Store): Buffer {
@@ -12,7 +13,7 @@ export function set(args: string[], store: Store): Buffer {
 
   if (args.length === 4) {
     const opt = args[2].toUpperCase();
-    if (!/^\d+$/.test(args[3])) {
+    if (!isPositiveIntegerString(args[3])) {
       return encode.error("ERR value is not an integer or out of range");
     }
     const duration = parseInt(args[3], 10);

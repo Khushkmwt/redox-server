@@ -2,6 +2,8 @@
 // All lengths are byte-lengths (Buffer.byteLength), never JS character counts.
 // Every response is terminated with CRLF as required by the RESP2 spec.
 
+import { sanitizeCRLF } from "../utils/validators.js";
+
 const CRLF = "\r\n";
 
 function crlf(s: string): Buffer {
@@ -10,14 +12,12 @@ function crlf(s: string): Buffer {
 
 /** +OK\r\n  (or any simple string) */
 function simpleString(s: string): Buffer {
-  const sanitized = s.replace(/[\r\n]+/g, " ");
-  return crlf(`+${sanitized}`);
+  return crlf(`+${sanitizeCRLF(s)}`);
 }
 
 /** -ERR message\r\n */
 function error(msg: string): Buffer {
-  const sanitized = msg.replace(/[\r\n]+/g, " ");
-  return crlf(`-${sanitized}`);
+  return crlf(`-${sanitizeCRLF(msg)}`);
 }
 
 /** :42\r\n */

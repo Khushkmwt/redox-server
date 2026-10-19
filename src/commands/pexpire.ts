@@ -1,5 +1,6 @@
 import { encode } from "../protocol/resp-encoder.js";
 import type { Store } from "../storage/store.js";
+import { isIntegerString } from "../utils/validators.js";
 
 // PEXPIRE key milliseconds
 export function pexpire(args: string[], store: Store): Buffer {
@@ -7,7 +8,7 @@ export function pexpire(args: string[], store: Store): Buffer {
     return encode.error("ERR wrong number of arguments for 'pexpire' command");
   }
 
-  if (!/^-?\d+$/.test(args[1])) {
+  if (!isIntegerString(args[1])) {
     return encode.error("ERR value is not an integer or out of range");
   }
 

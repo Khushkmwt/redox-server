@@ -41,10 +41,9 @@ import { pttl } from "./pttl.js";
 import { persist } from "./persist.js";
 import { save } from "./save.js";
 import { lastsave } from "./lastsave.js";
+import type { CommandHandler } from "../types/commands.js";
 
-type Handler = (args: string[], store: Store) => Buffer;
-
-const handlers: Record<string, Handler> = {
+const handlers: Record<string, CommandHandler> = {
   PING: ping,
   SET: set,
   GET: get,

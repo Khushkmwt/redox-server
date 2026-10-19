@@ -2,25 +2,14 @@ import fs from "node:fs";
 import path from "node:path";
 import type { Store } from "./store.js";
 
-export interface SnapshotData {
-  version: number;
-  savedAt: number;
-  entries: SnapshotEntry[];
-}
+import {
+  type SnapshotData,
+  type SnapshotEntry,
+  type SnapshotSaveResult,
+  type SnapshotRestoreResult,
+} from "../types/persistence.js";
 
-export type SnapshotEntry =
-  | {
-      key: string;
-      type: "string";
-      value: string;
-      ttlMsRemaining?: number;
-    }
-  | {
-      key: string;
-      type: "hash";
-      fields: Record<string, string>;
-      ttlMsRemaining?: number;
-    };
+export type { SnapshotData, SnapshotEntry, SnapshotSaveResult, SnapshotRestoreResult };
 
 export function getDefaultDumpPath(): string {
   return process.env.DUMP_PATH ?? path.join(process.cwd(), "data", "dump.json");

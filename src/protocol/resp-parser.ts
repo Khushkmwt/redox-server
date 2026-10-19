@@ -16,9 +16,12 @@
 // On unrecoverable framing errors the parser calls `onError` and resets,
 // allowing the connection to return a RESP2 error without crashing.
 
-const MAX_BULK_BYTES = 512 * 1024 * 1024; // 512 MiB hard limit per argument
-const MAX_ARRAY_SIZE = 1024; // maximum arguments per command
-const MAX_BUFFER_BYTES = 64 * 1024 * 1024; // 64 MB maximum unparsed stream buffer
+import {
+  MAX_ARRAY_SIZE,
+  MAX_BULK_BYTES,
+  MAX_BUFFER_BYTES,
+} from "../utils/constants.js";
+import { isPositiveIntegerString } from "../utils/validators.js";
 
 type State = "ARRAY_HEADER" | "BULK_HEADER" | "BULK_DATA";
 
@@ -78,7 +81,7 @@ export class RespParser {
     }
 
     const countStr = line.slice(1);
-    if (!/^\d+$/.test(countStr)) {
+    if (!isPositiveIntegerString(countStr)) {
       this.error(`Invalid array count: ${countStr}`);
       return true;
     }
@@ -116,7 +119,7 @@ export class RespParser {
     }
 
     const lenStr = line.slice(1);
-    if (!/^\d+$/.test(lenStr)) {
+    if (!isPositiveIntegerString(lenStr)) {
       this.error(`Invalid bulk length: ${lenStr}`);
       return true;
     }

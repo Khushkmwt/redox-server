@@ -1,7 +1,6 @@
 import { encode } from "../protocol/resp-encoder.js";
 import type { Store } from "../storage/store.js";
-
-const INTEGER_REGEX = /^-?\d+$/;
+import { isIntegerString, isWithinInt64 } from "../utils/validators.js";
 
 /**
  * Apply an integer delta (positive or negative) to the number stored at key.
@@ -19,7 +18,7 @@ export function applyIntegerDelta(
   if (current === undefined) {
     val = 0n;
   } else {
-    if (!INTEGER_REGEX.test(current)) {
+    if (!isIntegerString(current)) {
       return encode.error("ERR value is not an integer or out of range");
     }
     try {
@@ -30,7 +29,7 @@ export function applyIntegerDelta(
   }
 
   const result = val + delta;
-  if (result > 9223372036854775807n || result < -9223372036854775808n) {
+  if (!isWithinInt64(result)) {
     return encode.error("ERR increment or decrement would overflow");
   }
   store.set(key, result.toString(), undefined, true);
@@ -38,7 +37,7 @@ export function applyIntegerDelta(
 }
 
 export function parseIntegerArg(arg: string): bigint | null {
-  if (!INTEGER_REGEX.test(arg)) {
+  if (!isIntegerString(arg)) {
     return null;
   }
   try {
