@@ -14,6 +14,8 @@ export function isEntryExpired(entry: Entry | undefined, now = Date.now()): bool
 
 /**
  * Perform one active expiry background sweep tick across keys with TTL.
+ * Snapshots up to batchSize distinct keys to prevent inspecting the same key
+ * multiple times in the same tick (R16).
  */
 export function sweepActiveExpiry(
   data: Map<string, Entry>,
@@ -23,10 +25,15 @@ export function sweepActiveExpiry(
   const now = Date.now();
   let purgedCount = 0;
   let freedBytes = 0;
-  let checked = 0;
 
+  // Snapshot up to batchSize distinct keys
+  const sample: string[] = [];
   for (const key of ttlKeys) {
-    checked++;
+    sample.push(key);
+    if (sample.length >= batchSize) break;
+  }
+
+  for (const key of sample) {
     const entry = data.get(key);
 
     if (!entry || entry.expiresAt === undefined) {
@@ -42,8 +49,6 @@ export function sweepActiveExpiry(
       ttlKeys.delete(key);
       ttlKeys.add(key);
     }
-
-    if (checked >= batchSize) break;
   }
 
   return { purgedCount, freedBytes };

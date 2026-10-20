@@ -62,9 +62,17 @@ class Store {
 
   constructor(options?: { maxMemoryBytes?: number; evictionPolicy?: EvictionPolicy; port?: number }) {
     if (options?.maxMemoryBytes !== undefined) {
+      if (!Number.isFinite(options.maxMemoryBytes) || options.maxMemoryBytes < 0) {
+        throw new Error(`Invalid maxMemoryBytes: '${options.maxMemoryBytes}'`);
+      }
       this.maxMemory = options.maxMemoryBytes;
     }
     if (options?.evictionPolicy !== undefined) {
+      if (options.evictionPolicy !== "noeviction" && options.evictionPolicy !== "allkeys-lru") {
+        throw new Error(
+          `Invalid evictionPolicy: '${options.evictionPolicy}'. Must be 'noeviction' or 'allkeys-lru'`
+        );
+      }
       this.evictionPolicy = options.evictionPolicy;
     }
     if (options?.port !== undefined) {

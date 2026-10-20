@@ -6,12 +6,17 @@ import { isIntegerString, isWithinInt64 } from "../utils/validators.js";
  * Apply an integer delta (positive or negative) to the number stored at key.
  * If the key does not exist, it is initialized to 0.
  * Returns RESP2 integer response or RESP2 error response.
+ * Enforces signed 64-bit integer range on existing values, deltas, and results (R10).
  */
 export function applyIntegerDelta(
   key: string,
   delta: bigint,
   store: Store
 ): Buffer {
+  if (!isWithinInt64(delta)) {
+    return encode.error("ERR value is not an integer or out of range");
+  }
+
   const current = store.get(key);
 
   let val: bigint;
@@ -23,6 +28,9 @@ export function applyIntegerDelta(
     }
     try {
       val = BigInt(current);
+      if (!isWithinInt64(val)) {
+        return encode.error("ERR value is not an integer or out of range");
+      }
     } catch {
       return encode.error("ERR value is not an integer or out of range");
     }
@@ -41,7 +49,9 @@ export function parseIntegerArg(arg: string): bigint | null {
     return null;
   }
   try {
-    return BigInt(arg);
+    const val = BigInt(arg);
+    if (!isWithinInt64(val)) return null;
+    return val;
   } catch {
     return null;
   }

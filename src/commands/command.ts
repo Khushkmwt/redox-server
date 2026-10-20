@@ -1,5 +1,6 @@
 import { encode } from "../protocol/resp-encoder.js";
 import type { Store } from "../storage/store.js";
+import { COMMAND_SPECS } from "../types/index.js";
 import { getSupportedCommands } from "./registry.js";
 
 /**
@@ -35,17 +36,25 @@ export function command(args: string[], _store: Store): Buffer {
     return subcommandHandlers[sub]();
   }
 
-  // Bare COMMAND returns standard Redis nested command specifications
-  const matrix = getSupportedCommands().map((name) =>
-    encode.array([
+  // Bare COMMAND returns standard Redis nested command specifications (R12)
+  const matrix = getSupportedCommands().map((name) => {
+    const spec = COMMAND_SPECS[name] ?? {
+      arity: 1,
+      flags: ["fast"],
+      firstKey: 1,
+      lastKey: 1,
+      step: 1,
+    };
+
+    return encode.array([
       encode.bulkString(name.toUpperCase()),
-      encode.integer(1),
-      encode.array([encode.simpleString("fast")]),
-      encode.integer(1),
-      encode.integer(1),
-      encode.integer(1),
-    ])
-  );
+      encode.integer(spec.arity),
+      encode.array(spec.flags.map((f) => encode.simpleString(f))),
+      encode.integer(spec.firstKey),
+      encode.integer(spec.lastKey),
+      encode.integer(spec.step),
+    ]);
+  });
 
   return encode.array(matrix);
 }

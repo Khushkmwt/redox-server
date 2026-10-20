@@ -35,6 +35,9 @@ export interface RedoxServerOptions {
 
 let nextClientId = 1;
 
+/**
+ * Creates a Redox TCP server instance with isolated connection contexts and authentication.
+ */
 export function createRedoxServer(options: RedoxServerOptions = {}): net.Server {
   const storeInstance = options.store ?? store;
   const maxConnections = options.maxConnections ?? MAX_CONNECTIONS;
@@ -109,7 +112,6 @@ export const server = createRedoxServer();
 
 server.on("error", (err) => {
   logger.error(`[server error] ${err.message}`);
-  process.exit(1);
 });
 
 // Attempt to restore snapshot on startup if available
