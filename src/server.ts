@@ -86,8 +86,7 @@ export function createRedoxServer(options: RedoxServerOptions = {}): net.Server 
       },
       (msg) => {
         logger.error(`[parse error] ${socket.remoteAddress}: ${msg}`);
-        socket.write(encode.error(`ERR Protocol error: ${msg}`));
-        socket.destroy();
+        socket.end(encode.error(`ERR Protocol error: ${msg}`));
       }
     );
 
