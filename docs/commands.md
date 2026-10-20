@@ -1,6 +1,6 @@
 # Redox Command Reference
 
-Full specification of all 19 Redis-compatible commands implemented in `redox-server`.
+Full specification of all supported Redis commands implemented in `redox-server`.
 
 ---
 
@@ -40,6 +40,19 @@ Full specification of all 19 Redis-compatible commands implemented in `redox-ser
 - [TTL](#ttl)
 - [PTTL](#pttl)
 - [PERSIST](#persist)
+- [SAVE](#save)
+- [LASTSAVE](#lastsave)
+- [LPUSH](#lpush)
+- [RPUSH](#rpush)
+- [LPOP](#lpop)
+- [RPOP](#rpop)
+- [LRANGE](#lrange)
+- [LLEN](#llen)
+- [SADD](#sadd)
+- [SREM](#srem)
+- [SMEMBERS](#smembers)
+- [SISMEMBER](#sismember)
+- [SCARD](#scard)
 
 ---
 
@@ -238,5 +251,61 @@ Full specification of all 19 Redis-compatible commands implemented in `redox-ser
 - **Syntax**: `LASTSAVE`
 - **Description**: Returns the UNIX timestamp (in seconds) of the last successful snapshot save to disk.
 - **Returns**: Integer UNIX timestamp (e.g. `:1729124400`).
+
+### LPUSH
+- **Syntax**: `LPUSH key value [value ...]`
+- **Description**: Inserts all specified values at the head of the list stored at key.
+- **Returns**: Integer length of the list after the push operation.
+
+### RPUSH
+- **Syntax**: `RPUSH key value [value ...]`
+- **Description**: Inserts all specified values at the tail of the list stored at key.
+- **Returns**: Integer length of the list after the push operation.
+
+### LPOP
+- **Syntax**: `LPOP key [count]`
+- **Description**: Removes and returns the first element of the list stored at key, or the first `count` elements if provided.
+- **Returns**: Bulk string element, or array of bulk strings if `count` was provided, or `$-1` (nil) if key does not exist.
+
+### RPOP
+- **Syntax**: `RPOP key [count]`
+- **Description**: Removes and returns the last element of the list stored at key, or the last `count` elements if provided.
+- **Returns**: Bulk string element, or array of bulk strings if `count` was provided, or `$-1` (nil) if key does not exist.
+
+### LRANGE
+- **Syntax**: `LRANGE key start stop`
+- **Description**: Returns the specified elements of the list stored at key. Offsets can be negative to indicate offsets starting from the end of the list (`-1` = last element).
+- **Returns**: Array of elements in the specified range.
+
+### LLEN
+- **Syntax**: `LLEN key`
+- **Description**: Returns the length of the list stored at key.
+- **Returns**: Integer length of the list, or `0` if key does not exist.
+
+### SADD
+- **Syntax**: `SADD key member [member ...]`
+- **Description**: Adds specified members to the set stored at key. Specified members that are already a member of this set are ignored.
+- **Returns**: Integer number of elements that were added to the set, not including all elements already present into the set.
+
+### SREM
+- **Syntax**: `SREM key member [member ...]`
+- **Description**: Removes specified members from the set stored at key.
+- **Returns**: Integer number of members that were removed from the set, not including non-existing members.
+
+### SMEMBERS
+- **Syntax**: `SMEMBERS key`
+- **Description**: Returns all the members of the set value stored at key.
+- **Returns**: Array of all members of the set.
+
+### SISMEMBER
+- **Syntax**: `SISMEMBER key member`
+- **Description**: Returns if member is a member of the set stored at key.
+- **Returns**: `:1` if element is a member of the set, `:0` if element is not a member or key does not exist.
+
+### SCARD
+- **Syntax**: `SCARD key`
+- **Description**: Returns the set cardinality (number of elements) of the set stored at key.
+- **Returns**: Integer cardinality of the set, or `0` if key does not exist.
+
 
 

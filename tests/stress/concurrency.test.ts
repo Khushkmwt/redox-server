@@ -158,7 +158,9 @@ describe("concurrency and stress test suite", () => {
       for (let op = 0; op < OPS_PER_CLIENT; op++) {
         const key = `key:${clientIndex}:${op % 20}`;
         const hashKey = `hash:${clientIndex}:${op % 10}`;
-        const opType = op % 8;
+        const listKey = `list:${clientIndex}:${op % 10}`;
+        const setKey = `set:${clientIndex}:${op % 10}`;
+        const opType = op % 10;
 
         let res: string;
         switch (opType) {
@@ -195,6 +197,16 @@ describe("concurrency and stress test suite", () => {
           case 7: // DEL
             res = await execute("DEL", key);
             expect(res.startsWith(":")).toBe(true);
+            break;
+          case 8: // LPUSH & LPOP
+            await execute("RPUSH", listKey, `item-${op}`);
+            res = await execute("LPOP", listKey);
+            expect(res.startsWith("$")).toBe(true);
+            break;
+          case 9: // SADD & SISMEMBER
+            await execute("SADD", setKey, `tag-${op}`);
+            res = await execute("SISMEMBER", setKey, `tag-${op}`);
+            expect(res).toBe(":1\r\n");
             break;
         }
       }

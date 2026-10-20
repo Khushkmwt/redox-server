@@ -69,34 +69,55 @@ export class RespParser {
     }
   }
 
+  /**
+   * Parse and validate a prefixed integer header line (e.g. `*<count>` or `$<len>`).
+   * Returns parsed number, or null on error (after calling this.error()).
+   */
+  private parseHeaderCount(
+    line: string,
+    prefix: string,
+    typeLabel: string,
+    maxLimit: number
+  ): number | null {
+    if (!line.startsWith(prefix)) {
+      this.error(`Expected ${typeLabel} (${prefix}), got: ${JSON.stringify(line)}`);
+      return null;
+    }
+
+    const numStr = line.slice(1);
+    const label = prefix === "*" ? "array count" : "bulk length";
+    if (!isPositiveIntegerString(numStr)) {
+      this.error(`Invalid ${label}: ${numStr}`);
+      return null;
+    }
+
+    const num = parseInt(numStr, 10);
+    if (isNaN(num) || num < 0) {
+      this.error(`Invalid ${label}: ${numStr}`);
+      return null;
+    }
+
+    if (num > maxLimit) {
+      const unit = prefix === "$" ? ` bytes (max ${maxLimit})` : ` (max ${maxLimit})`;
+      this.error(`${typeLabel === "bulk string" ? "Bulk string" : "Array"} too large: ${num}${unit}`);
+      return null;
+    }
+
+    return num;
+  }
+
   // --- State: ARRAY_HEADER ---
   // Expect:  *<n>\r\n
   private readArrayHeader(): boolean {
     const line = this.readLine();
     if (line === null) return false;
 
-    if (!line.startsWith("*")) {
-      this.error(`Expected array (*), got: ${JSON.stringify(line)}`);
-      return true; // consumed the bad line, keep going (after reset)
+    const count = this.parseHeaderCount(line, "*", "array", MAX_ARRAY_SIZE);
+    if (count === null) {
+      return true; // error already emitted by parseHeaderCount, consumed line
     }
 
-    const countStr = line.slice(1);
-    if (!isPositiveIntegerString(countStr)) {
-      this.error(`Invalid array count: ${countStr}`);
-      return true;
-    }
-
-    const count = parseInt(countStr, 10);
-    if (isNaN(count) || count < 0) {
-      this.error(`Invalid array count: ${countStr}`);
-      return true;
-    }
-    if (count > MAX_ARRAY_SIZE) {
-      this.error(`Array too large: ${count} (max ${MAX_ARRAY_SIZE})`);
-      return true;
-    }
     if (count === 0) {
-      // Empty array — emit immediately.
       this.emit([]);
       return true;
     }
@@ -113,24 +134,8 @@ export class RespParser {
     const line = this.readLine();
     if (line === null) return false;
 
-    if (!line.startsWith("$")) {
-      this.error(`Expected bulk string ($), got: ${JSON.stringify(line)}`);
-      return true;
-    }
-
-    const lenStr = line.slice(1);
-    if (!isPositiveIntegerString(lenStr)) {
-      this.error(`Invalid bulk length: ${lenStr}`);
-      return true;
-    }
-
-    const len = parseInt(lenStr, 10);
-    if (isNaN(len) || len < 0) {
-      this.error(`Invalid bulk length: ${lenStr}`);
-      return true;
-    }
-    if (len > MAX_BULK_BYTES) {
-      this.error(`Bulk string too large: ${len} bytes (max ${MAX_BULK_BYTES})`);
+    const len = this.parseHeaderCount(line, "$", "bulk string", MAX_BULK_BYTES);
+    if (len === null) {
       return true;
     }
 

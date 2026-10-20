@@ -11,3 +11,8 @@ export const MAX_PATTERN_LENGTH = 1024; // maximum glob pattern length
 export const DEFAULT_PORT = 6379;
 export const EVICTION_SAMPLE_SIZE = 16;
 export const ACTIVE_EXPIRY_BATCH_SIZE = 20;
+
+export const ERR_WRONG_TYPE = "WRONGTYPE Operation against a key holding the wrong kind of value";
+export const ERR_NOT_INTEGER = "ERR value is not an integer or out of range";
+export const ERR_SYNTAX = "ERR syntax error";
+

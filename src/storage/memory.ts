@@ -2,6 +2,8 @@ import type { Entry } from "./types.js";
 
 export const KEY_OVERHEAD = 32;
 export const HASH_FIELD_OVERHEAD = 16;
+export const LIST_ELEMENT_OVERHEAD = 16;
+export const SET_MEMBER_OVERHEAD = 16;
 
 /**
  * Parse human memory strings like '64mb', '500kb', '1gb', or raw bytes.
@@ -42,6 +44,20 @@ export function calculateEntryBytes(key: string, entry: Entry): number {
   const keyBytes = Buffer.byteLength(key, "utf8") + KEY_OVERHEAD;
   if (entry.type === "string") {
     return keyBytes + Buffer.byteLength(entry.value, "utf8");
+  }
+  if (entry.type === "list") {
+    let total = keyBytes;
+    for (const el of entry.elements) {
+      total += Buffer.byteLength(el, "utf8") + LIST_ELEMENT_OVERHEAD;
+    }
+    return total;
+  }
+  if (entry.type === "set") {
+    let total = keyBytes;
+    for (const m of entry.members) {
+      total += Buffer.byteLength(m, "utf8") + SET_MEMBER_OVERHEAD;
+    }
+    return total;
   }
   let total = keyBytes;
   for (const [f, v] of entry.fields.entries()) {
