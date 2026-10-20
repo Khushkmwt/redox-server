@@ -41,6 +41,17 @@ import { pttl } from "./pttl.js";
 import { persist } from "./persist.js";
 import { save } from "./save.js";
 import { lastsave } from "./lastsave.js";
+import { lpush } from "./lpush.js";
+import { rpush } from "./rpush.js";
+import { lpop } from "./lpop.js";
+import { rpop } from "./rpop.js";
+import { lrange } from "./lrange.js";
+import { llen } from "./llen.js";
+import { sadd } from "./sadd.js";
+import { srem } from "./srem.js";
+import { smembers } from "./smembers.js";
+import { sismember } from "./sismember.js";
+import { scard } from "./scard.js";
 import type { CommandHandler } from "../types/commands.js";
 
 const handlers: Record<string, CommandHandler> = {
@@ -80,6 +91,17 @@ const handlers: Record<string, CommandHandler> = {
   PERSIST: persist,
   SAVE: save,
   LASTSAVE: lastsave,
+  LPUSH: lpush,
+  RPUSH: rpush,
+  LPOP: lpop,
+  RPOP: rpop,
+  LRANGE: lrange,
+  LLEN: llen,
+  SADD: sadd,
+  SREM: srem,
+  SMEMBERS: smembers,
+  SISMEMBER: sismember,
+  SCARD: scard,
 };
 
 /**

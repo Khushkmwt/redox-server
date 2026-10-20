@@ -1,4 +1,4 @@
-export type ValueType = "string" | "hash";
+export type ValueType = "string" | "hash" | "list" | "set";
 
 export interface StringEntry {
   type: "string";
@@ -14,7 +14,21 @@ export interface HashEntry {
   expiresAt?: number;
 }
 
-export type Entry = StringEntry | HashEntry;
+export interface ListEntry {
+  type: "list";
+  elements: string[];
+  lastAccessedAt: number;
+  expiresAt?: number;
+}
+
+export interface SetEntry {
+  type: "set";
+  members: Set<string>;
+  lastAccessedAt: number;
+  expiresAt?: number;
+}
+
+export type Entry = StringEntry | HashEntry | ListEntry | SetEntry;
 
 export type EvictionPolicy = "noeviction" | "allkeys-lru";
 

@@ -5,9 +5,12 @@ import {
   type Entry,
   type StringEntry,
   type HashEntry,
+  type ListEntry,
+  type SetEntry,
   type ValueType,
   type EvictionPolicy,
 } from "./types.js";
+import { ERR_WRONG_TYPE } from "../utils/constants.js";
 import {
   calculateEntryBytes,
   parseMemoryString,
@@ -464,6 +467,336 @@ class Store {
     return Array.from(entry.fields.values());
   }
 
+  // --- List operations ---
+
+  lpush(key: string, values: string[]): number {
+    this.checkExpired(key);
+    const entry = this.data.get(key);
+    if (entry && entry.type !== "list") {
+      throw new Error(ERR_WRONG_TYPE);
+    }
+    if (values.length === 0) {
+      return entry ? entry.elements.length : 0;
+    }
+
+    const oldBytes = entry ? calculateEntryBytes(key, entry) : 0;
+    const now = Date.now();
+    const expiresAt = entry?.expiresAt;
+    const newElements = [...values.slice().reverse(), ...(entry ? entry.elements : [])];
+
+    const newEntry: ListEntry = {
+      type: "list",
+      elements: newElements,
+      lastAccessedAt: now,
+      expiresAt,
+    };
+
+    const newBytes = calculateEntryBytes(key, newEntry);
+    const delta = newBytes - oldBytes;
+
+    this.ensureMemory(delta, key);
+
+    this.data.set(key, newEntry);
+    if (expiresAt !== undefined) {
+      this.ttlKeys.add(key);
+    }
+    this.usedMemory += delta;
+
+    return newElements.length;
+  }
+
+  rpush(key: string, values: string[]): number {
+    this.checkExpired(key);
+    const entry = this.data.get(key);
+    if (entry && entry.type !== "list") {
+      throw new Error(ERR_WRONG_TYPE);
+    }
+    if (values.length === 0) {
+      return entry ? entry.elements.length : 0;
+    }
+
+    const oldBytes = entry ? calculateEntryBytes(key, entry) : 0;
+    const now = Date.now();
+    const expiresAt = entry?.expiresAt;
+    const newElements = [...(entry ? entry.elements : []), ...values];
+
+    const newEntry: ListEntry = {
+      type: "list",
+      elements: newElements,
+      lastAccessedAt: now,
+      expiresAt,
+    };
+
+    const newBytes = calculateEntryBytes(key, newEntry);
+    const delta = newBytes - oldBytes;
+
+    this.ensureMemory(delta, key);
+
+    this.data.set(key, newEntry);
+    if (expiresAt !== undefined) {
+      this.ttlKeys.add(key);
+    }
+    this.usedMemory += delta;
+
+    return newElements.length;
+  }
+
+  lpop(key: string, count?: number): string | string[] | null {
+    if (this.checkExpired(key)) return null;
+
+    const entry = this.data.get(key);
+    if (!entry) return null;
+    if (entry.type !== "list") {
+      throw new Error(ERR_WRONG_TYPE);
+    }
+
+    const oldBytes = calculateEntryBytes(key, entry);
+
+    if (count === undefined) {
+      if (entry.elements.length === 0) {
+        this.data.delete(key);
+        this.ttlKeys.delete(key);
+        this.usedMemory = Math.max(0, this.usedMemory - oldBytes);
+        return null;
+      }
+
+      const popped = entry.elements.shift()!;
+      if (entry.elements.length === 0) {
+        this.data.delete(key);
+        this.ttlKeys.delete(key);
+        this.usedMemory = Math.max(0, this.usedMemory - oldBytes);
+      } else {
+        const newBytes = calculateEntryBytes(key, entry);
+        this.usedMemory = Math.max(0, this.usedMemory - (oldBytes - newBytes));
+        entry.lastAccessedAt = Date.now();
+      }
+      return popped;
+    }
+
+    if (count <= 0) return [];
+
+    const numToPop = Math.min(count, entry.elements.length);
+    const popped = entry.elements.splice(0, numToPop);
+
+    if (entry.elements.length === 0) {
+      this.data.delete(key);
+      this.ttlKeys.delete(key);
+      this.usedMemory = Math.max(0, this.usedMemory - oldBytes);
+    } else {
+      const newBytes = calculateEntryBytes(key, entry);
+      this.usedMemory = Math.max(0, this.usedMemory - (oldBytes - newBytes));
+      entry.lastAccessedAt = Date.now();
+    }
+
+    return popped;
+  }
+
+  rpop(key: string, count?: number): string | string[] | null {
+    if (this.checkExpired(key)) return null;
+
+    const entry = this.data.get(key);
+    if (!entry) return null;
+    if (entry.type !== "list") {
+      throw new Error(ERR_WRONG_TYPE);
+    }
+
+    const oldBytes = calculateEntryBytes(key, entry);
+
+    if (count === undefined) {
+      if (entry.elements.length === 0) {
+        this.data.delete(key);
+        this.ttlKeys.delete(key);
+        this.usedMemory = Math.max(0, this.usedMemory - oldBytes);
+        return null;
+      }
+
+      const popped = entry.elements.pop()!;
+      if (entry.elements.length === 0) {
+        this.data.delete(key);
+        this.ttlKeys.delete(key);
+        this.usedMemory = Math.max(0, this.usedMemory - oldBytes);
+      } else {
+        const newBytes = calculateEntryBytes(key, entry);
+        this.usedMemory = Math.max(0, this.usedMemory - (oldBytes - newBytes));
+        entry.lastAccessedAt = Date.now();
+      }
+      return popped;
+    }
+
+    if (count <= 0) return [];
+
+    const numToPop = Math.min(count, entry.elements.length);
+    const popped: string[] = [];
+    for (let i = 0; i < numToPop; i++) {
+      popped.push(entry.elements.pop()!);
+    }
+
+    if (entry.elements.length === 0) {
+      this.data.delete(key);
+      this.ttlKeys.delete(key);
+      this.usedMemory = Math.max(0, this.usedMemory - oldBytes);
+    } else {
+      const newBytes = calculateEntryBytes(key, entry);
+      this.usedMemory = Math.max(0, this.usedMemory - (oldBytes - newBytes));
+      entry.lastAccessedAt = Date.now();
+    }
+
+    return popped;
+  }
+
+  lrange(key: string, start: number, stop: number): string[] {
+    if (this.checkExpired(key)) return [];
+
+    const entry = this.data.get(key);
+    if (!entry) return [];
+    if (entry.type !== "list") {
+      throw new Error(ERR_WRONG_TYPE);
+    }
+
+    entry.lastAccessedAt = Date.now();
+    const len = entry.elements.length;
+    if (len === 0) return [];
+
+    let s = start < 0 ? len + start : start;
+    let e = stop < 0 ? len + stop : stop;
+
+    if (s < 0) s = 0;
+    if (s >= len || s > e) return [];
+    if (e >= len) e = len - 1;
+
+    return entry.elements.slice(s, e + 1);
+  }
+
+  llen(key: string): number {
+    if (this.checkExpired(key)) return 0;
+
+    const entry = this.data.get(key);
+    if (!entry) return 0;
+    if (entry.type !== "list") {
+      throw new Error(ERR_WRONG_TYPE);
+    }
+
+    entry.lastAccessedAt = Date.now();
+    return entry.elements.length;
+  }
+
+  // --- Set operations ---
+
+  sadd(key: string, members: string[]): number {
+    this.checkExpired(key);
+
+    const entry = this.data.get(key);
+    if (entry && entry.type !== "set") {
+      throw new Error(ERR_WRONG_TYPE);
+    }
+
+    let addedCount = 0;
+    const oldBytes = entry ? calculateEntryBytes(key, entry) : 0;
+    const now = Date.now();
+    const expiresAt = entry?.expiresAt;
+
+    const setMembers = entry ? new Set(entry.members) : new Set<string>();
+
+    for (const m of members) {
+      if (!setMembers.has(m)) {
+        setMembers.add(m);
+        addedCount++;
+      }
+    }
+
+    const newEntry: SetEntry = {
+      type: "set",
+      members: setMembers,
+      lastAccessedAt: now,
+      expiresAt,
+    };
+
+    const newBytes = calculateEntryBytes(key, newEntry);
+    const delta = newBytes - oldBytes;
+
+    this.ensureMemory(delta, key);
+
+    this.data.set(key, newEntry);
+    if (expiresAt !== undefined) {
+      this.ttlKeys.add(key);
+    }
+    this.usedMemory += delta;
+
+    return addedCount;
+  }
+
+  srem(key: string, members: string[]): number {
+    if (this.checkExpired(key)) return 0;
+
+    const entry = this.data.get(key);
+    if (!entry) return 0;
+    if (entry.type !== "set") {
+      throw new Error(ERR_WRONG_TYPE);
+    }
+
+    const oldBytes = calculateEntryBytes(key, entry);
+    let removed = 0;
+
+    for (const m of members) {
+      if (entry.members.delete(m)) {
+        removed++;
+      }
+    }
+
+    if (removed > 0) {
+      if (entry.members.size === 0) {
+        this.data.delete(key);
+        this.ttlKeys.delete(key);
+        this.usedMemory = Math.max(0, this.usedMemory - oldBytes);
+      } else {
+        const newBytes = calculateEntryBytes(key, entry);
+        this.usedMemory = Math.max(0, this.usedMemory - (oldBytes - newBytes));
+        entry.lastAccessedAt = Date.now();
+      }
+    }
+
+    return removed;
+  }
+
+  smembers(key: string): string[] {
+    if (this.checkExpired(key)) return [];
+
+    const entry = this.data.get(key);
+    if (!entry) return [];
+    if (entry.type !== "set") {
+      throw new Error(ERR_WRONG_TYPE);
+    }
+
+    entry.lastAccessedAt = Date.now();
+    return Array.from(entry.members);
+  }
+
+  sismember(key: string, member: string): boolean {
+    if (this.checkExpired(key)) return false;
+
+    const entry = this.data.get(key);
+    if (!entry) return false;
+    if (entry.type !== "set") {
+      throw new Error(ERR_WRONG_TYPE);
+    }
+
+    entry.lastAccessedAt = Date.now();
+    return entry.members.has(member);
+  }
+
+  scard(key: string): number {
+    if (this.checkExpired(key)) return 0;
+
+    const entry = this.data.get(key);
+    if (!entry) return 0;
+    if (entry.type !== "set") {
+      throw new Error(ERR_WRONG_TYPE);
+    }
+
+    entry.lastAccessedAt = Date.now();
+    return entry.members.size;
+  }
+
   // --- Keyspace operations ---
 
   del(...keys: string[]): number {
@@ -490,7 +823,7 @@ class Store {
     return count;
   }
 
-  type(key: string): "string" | "hash" | "none" {
+  type(key: string): ValueType | "none" {
     if (this.checkExpired(key)) return "none";
     const entry = this.data.get(key);
     if (!entry) return "none";
@@ -590,6 +923,8 @@ export {
   type Entry,
   type StringEntry,
   type HashEntry,
+  type ListEntry,
+  type SetEntry,
   type ValueType,
   type EvictionPolicy,
   calculateEntryBytes,

@@ -10,6 +10,18 @@ export type SnapshotEntry =
       type: "hash";
       fields: Record<string, string>;
       ttlMsRemaining?: number;
+    }
+  | {
+      key: string;
+      type: "list";
+      elements: string[];
+      ttlMsRemaining?: number;
+    }
+  | {
+      key: string;
+      type: "set";
+      members: string[];
+      ttlMsRemaining?: number;
     };
 
 export interface SnapshotData {

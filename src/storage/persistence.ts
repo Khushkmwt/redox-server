@@ -49,6 +49,22 @@ export function saveSnapshot(
         fields: Object.fromEntries(pairs),
         ttlMsRemaining,
       });
+    } else if (keyType === "list") {
+      const elements = store.lrange(key, 0, -1);
+      entries.push({
+        key,
+        type: "list",
+        elements,
+        ttlMsRemaining,
+      });
+    } else if (keyType === "set") {
+      const members = store.smembers(key);
+      entries.push({
+        key,
+        type: "set",
+        members,
+        ttlMsRemaining,
+      });
     }
   }
 
@@ -105,6 +121,22 @@ export function restoreSnapshot(
       const fieldPairs = Object.entries(item.fields);
       if (fieldPairs.length > 0) {
         store.hset(item.key, fieldPairs);
+        if (effectiveTtl !== undefined) {
+          store.pexpire(item.key, effectiveTtl);
+        }
+        restoredCount++;
+      }
+    } else if (item.type === "list") {
+      if (item.elements && item.elements.length > 0) {
+        store.rpush(item.key, item.elements);
+        if (effectiveTtl !== undefined) {
+          store.pexpire(item.key, effectiveTtl);
+        }
+        restoredCount++;
+      }
+    } else if (item.type === "set") {
+      if (item.members && item.members.length > 0) {
+        store.sadd(item.key, item.members);
         if (effectiveTtl !== undefined) {
           store.pexpire(item.key, effectiveTtl);
         }

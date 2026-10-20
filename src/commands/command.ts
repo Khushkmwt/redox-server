@@ -38,6 +38,17 @@ export const SUPPORTED_COMMANDS = [
   "PERSIST",
   "SAVE",
   "LASTSAVE",
+  "LPUSH",
+  "RPUSH",
+  "LPOP",
+  "RPOP",
+  "LRANGE",
+  "LLEN",
+  "SADD",
+  "SREM",
+  "SMEMBERS",
+  "SISMEMBER",
+  "SCARD",
 ];
 
 // COMMAND [DOCS | COUNT | LIST]
