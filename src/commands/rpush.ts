@@ -1,10 +1,11 @@
 import { encode } from "../protocol/resp-encoder.js";
 import type { Store } from "../storage/store.js";
+import { errWrongArgs } from "./command-utils.js";
 
 // RPUSH key value [value ...]
 export function rpush(args: string[], store: Store): Buffer {
   if (args.length < 2) {
-    return encode.error("ERR wrong number of arguments for 'rpush' command");
+    return errWrongArgs("rpush");
   }
 
   const [key, ...values] = args;

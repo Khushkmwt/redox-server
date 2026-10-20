@@ -1,10 +1,11 @@
 import { encode } from "../protocol/resp-encoder.js";
 import type { Store } from "../storage/store.js";
+import { errWrongArgs } from "./command-utils.js";
 
 // SMEMBERS key
 export function smembers(args: string[], store: Store): Buffer {
   if (args.length !== 1) {
-    return encode.error("ERR wrong number of arguments for 'smembers' command");
+    return errWrongArgs("smembers");
   }
 
   try {

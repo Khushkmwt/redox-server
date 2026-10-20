@@ -1,20 +1,21 @@
 import { encode } from "../protocol/resp-encoder.js";
 import type { Store } from "../storage/store.js";
 import { isIntegerString } from "../utils/validators.js";
+import { errWrongArgs, errNotInteger } from "./command-utils.js";
 
 // EXPIRE key seconds
 export function expire(args: string[], store: Store): Buffer {
   if (args.length !== 2) {
-    return encode.error("ERR wrong number of arguments for 'expire' command");
+    return errWrongArgs("expire");
   }
 
   if (!isIntegerString(args[1])) {
-    return encode.error("ERR value is not an integer or out of range");
+    return errNotInteger();
   }
 
   const seconds = parseInt(args[1], 10);
   if (isNaN(seconds)) {
-    return encode.error("ERR value is not an integer or out of range");
+    return errNotInteger();
   }
 
   const ok = store.expire(args[0], seconds);

@@ -15,6 +15,56 @@ export function getDefaultDumpPath(): string {
   return process.env.DUMP_PATH ?? path.join(process.cwd(), "data", "dump.json");
 }
 
+type Serializer = (store: Store, key: string, ttlMsRemaining?: number) => SnapshotEntry | null;
+type Restorer = (store: Store, item: SnapshotEntry, effectiveTtl?: number) => boolean;
+
+const serializers: Record<string, Serializer> = {
+  string: (store, key, ttlMsRemaining) => {
+    const val = store.get(key);
+    return val !== undefined ? { key, type: "string", value: val, ttlMsRemaining } : null;
+  },
+  hash: (store, key, ttlMsRemaining) => {
+    const pairs = store.hgetall(key);
+    return { key, type: "hash", fields: Object.fromEntries(pairs), ttlMsRemaining };
+  },
+  list: (store, key, ttlMsRemaining) => {
+    const elements = store.lrange(key, 0, -1);
+    return { key, type: "list", elements, ttlMsRemaining };
+  },
+  set: (store, key, ttlMsRemaining) => {
+    const members = store.smembers(key);
+    return { key, type: "set", members, ttlMsRemaining };
+  },
+};
+
+const restorers: Record<string, Restorer> = {
+  string: (store, item, effectiveTtl) => {
+    if (item.type !== "string") return false;
+    store.set(item.key, item.value, effectiveTtl);
+    return true;
+  },
+  hash: (store, item, effectiveTtl) => {
+    if (item.type !== "hash") return false;
+    const pairs = Object.entries(item.fields);
+    if (pairs.length === 0) return false;
+    store.hset(item.key, pairs);
+    if (effectiveTtl !== undefined) store.pexpire(item.key, effectiveTtl);
+    return true;
+  },
+  list: (store, item, effectiveTtl) => {
+    if (item.type !== "list" || !item.elements?.length) return false;
+    store.rpush(item.key, item.elements);
+    if (effectiveTtl !== undefined) store.pexpire(item.key, effectiveTtl);
+    return true;
+  },
+  set: (store, item, effectiveTtl) => {
+    if (item.type !== "set" || !item.members?.length) return false;
+    store.sadd(item.key, item.members);
+    if (effectiveTtl !== undefined) store.pexpire(item.key, effectiveTtl);
+    return true;
+  },
+};
+
 /**
  * Save an atomic point-in-time snapshot of the in-memory store to disk.
  * Uses atomic rename to prevent file corruption.
@@ -36,35 +86,10 @@ export function saveSnapshot(
     const ttlMs = store.pttl(key);
     const ttlMsRemaining = ttlMs > 0 ? ttlMs : undefined;
 
-    if (keyType === "string") {
-      const val = store.get(key);
-      if (val !== undefined) {
-        entries.push({ key, type: "string", value: val, ttlMsRemaining });
-      }
-    } else if (keyType === "hash") {
-      const pairs = store.hgetall(key);
-      entries.push({
-        key,
-        type: "hash",
-        fields: Object.fromEntries(pairs),
-        ttlMsRemaining,
-      });
-    } else if (keyType === "list") {
-      const elements = store.lrange(key, 0, -1);
-      entries.push({
-        key,
-        type: "list",
-        elements,
-        ttlMsRemaining,
-      });
-    } else if (keyType === "set") {
-      const members = store.smembers(key);
-      entries.push({
-        key,
-        type: "set",
-        members,
-        ttlMsRemaining,
-      });
+    const serializer = serializers[keyType];
+    if (serializer) {
+      const entry = serializer(store, key, ttlMsRemaining);
+      if (entry) entries.push(entry);
     }
   }
 
@@ -114,34 +139,9 @@ export function restoreSnapshot(
       }
     }
 
-    if (item.type === "string") {
-      store.set(item.key, item.value, effectiveTtl);
+    const restorer = restorers[item.type];
+    if (restorer && restorer(store, item, effectiveTtl)) {
       restoredCount++;
-    } else if (item.type === "hash") {
-      const fieldPairs = Object.entries(item.fields);
-      if (fieldPairs.length > 0) {
-        store.hset(item.key, fieldPairs);
-        if (effectiveTtl !== undefined) {
-          store.pexpire(item.key, effectiveTtl);
-        }
-        restoredCount++;
-      }
-    } else if (item.type === "list") {
-      if (item.elements && item.elements.length > 0) {
-        store.rpush(item.key, item.elements);
-        if (effectiveTtl !== undefined) {
-          store.pexpire(item.key, effectiveTtl);
-        }
-        restoredCount++;
-      }
-    } else if (item.type === "set") {
-      if (item.members && item.members.length > 0) {
-        store.sadd(item.key, item.members);
-        if (effectiveTtl !== undefined) {
-          store.pexpire(item.key, effectiveTtl);
-        }
-        restoredCount++;
-      }
     }
   }
 

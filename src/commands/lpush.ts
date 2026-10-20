@@ -1,10 +1,11 @@
 import { encode } from "../protocol/resp-encoder.js";
 import type { Store } from "../storage/store.js";
+import { errWrongArgs } from "./command-utils.js";
 
 // LPUSH key value [value ...]
 export function lpush(args: string[], store: Store): Buffer {
   if (args.length < 2) {
-    return encode.error("ERR wrong number of arguments for 'lpush' command");
+    return errWrongArgs("lpush");
   }
 
   const [key, ...values] = args;

@@ -1,9 +1,17 @@
 import { MAX_PATTERN_LENGTH } from "../utils/constants.js";
 
+const MAX_CACHE_SIZE = 128;
+const patternCache = new Map<string, RegExp>();
+
 /**
- * Convert a Redis glob pattern (*, ?, [abc]) to a JavaScript RegExp.
+ * Convert a Redis glob pattern (*, ?, [abc]) to a JavaScript RegExp with bounded caching.
  */
 export function globToRegExp(pattern: string): RegExp {
+  const cached = patternCache.get(pattern);
+  if (cached) {
+    return cached;
+  }
+
   // Cap excessively long patterns
   const safePattern =
     pattern.length > MAX_PATTERN_LENGTH
@@ -36,5 +44,15 @@ export function globToRegExp(pattern: string): RegExp {
     }
   }
   regexStr += "$";
-  return new RegExp(regexStr);
+  const compiled = new RegExp(regexStr);
+
+  if (patternCache.size >= MAX_CACHE_SIZE) {
+    const oldestKey = patternCache.keys().next().value;
+    if (oldestKey !== undefined) {
+      patternCache.delete(oldestKey);
+    }
+  }
+  patternCache.set(pattern, compiled);
+
+  return compiled;
 }

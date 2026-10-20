@@ -1,10 +1,11 @@
 import { encode } from "../protocol/resp-encoder.js";
 import type { Store } from "../storage/store.js";
+import { errWrongArgs } from "./command-utils.js";
 
 // SADD key member [member ...]
 export function sadd(args: string[], store: Store): Buffer {
   if (args.length < 2) {
-    return encode.error("ERR wrong number of arguments for 'sadd' command");
+    return errWrongArgs("sadd");
   }
 
   const [key, ...members] = args;

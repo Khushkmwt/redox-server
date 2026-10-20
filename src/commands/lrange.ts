@@ -1,17 +1,18 @@
 import { encode } from "../protocol/resp-encoder.js";
 import type { Store } from "../storage/store.js";
 import { isIntegerString } from "../utils/validators.js";
+import { errWrongArgs, errNotInteger } from "./command-utils.js";
 
 // LRANGE key start stop
 export function lrange(args: string[], store: Store): Buffer {
   if (args.length !== 3) {
-    return encode.error("ERR wrong number of arguments for 'lrange' command");
+    return errWrongArgs("lrange");
   }
 
   const [key, startStr, stopStr] = args;
 
   if (!isIntegerString(startStr) || !isIntegerString(stopStr)) {
-    return encode.error("ERR value is not an integer or out of range");
+    return errNotInteger();
   }
 
   const start = parseInt(startStr, 10);

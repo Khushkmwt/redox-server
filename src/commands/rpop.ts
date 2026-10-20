@@ -1,22 +1,23 @@
 import { encode } from "../protocol/resp-encoder.js";
 import type { Store } from "../storage/store.js";
 import { isIntegerString } from "../utils/validators.js";
+import { errWrongArgs, errNotInteger } from "./command-utils.js";
 
 // RPOP key [count]
 export function rpop(args: string[], store: Store): Buffer {
   if (args.length < 1 || args.length > 2) {
-    return encode.error("ERR wrong number of arguments for 'rpop' command");
+    return errWrongArgs("rpop");
   }
 
   const key = args[0];
 
   if (args.length === 2) {
     if (!isIntegerString(args[1])) {
-      return encode.error("ERR value is not an integer or out of range");
+      return errNotInteger();
     }
     const count = parseInt(args[1], 10);
     if (count < 0) {
-      return encode.error("ERR value is not an integer or out of range");
+      return errNotInteger();
     }
 
     try {
