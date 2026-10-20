@@ -1,6 +1,7 @@
 import { encode } from "../protocol/resp-encoder.js";
 import type { Store } from "../storage/store.js";
 import { isIntegerString } from "../utils/validators.js";
+import { MAX_TTL_SECONDS } from "../utils/constants.js";
 import { errWrongArgs, errNotInteger } from "./command-utils.js";
 
 // EXPIRE key seconds
@@ -14,7 +15,7 @@ export function expire(args: string[], store: Store): Buffer {
   }
 
   const seconds = parseInt(args[1], 10);
-  if (isNaN(seconds)) {
+  if (isNaN(seconds) || seconds > MAX_TTL_SECONDS) {
     return errNotInteger();
   }
 

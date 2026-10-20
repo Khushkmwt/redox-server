@@ -114,7 +114,7 @@ export class RespParser {
 
     const count = this.parseHeaderCount(line, "*", "array", MAX_ARRAY_SIZE);
     if (count === null) {
-      return true; // error already emitted by parseHeaderCount, consumed line
+      return false; // Fatal framing error: abort further processing of this buffer
     }
 
     if (count === 0) {
@@ -136,7 +136,7 @@ export class RespParser {
 
     const len = this.parseHeaderCount(line, "$", "bulk string", MAX_BULK_BYTES);
     if (len === null) {
-      return true;
+      return false; // Fatal framing error: abort further processing of this buffer
     }
 
     this.bulkLen = len;
@@ -155,8 +155,7 @@ export class RespParser {
 
     if (crlf[0] !== 0x0d || crlf[1] !== 0x0a) {
       this.error(`Missing CRLF after bulk data`);
-      this.buf = this.buf.subarray(needed);
-      return true;
+      return false;
     }
 
     this.args.push(data.toString("utf8"));
@@ -192,6 +191,7 @@ export class RespParser {
   }
 
   private error(msg: string): void {
+    this.buf = Buffer.alloc(0); // clear remaining bytes so buffered commands do not execute
     this.resetState();
     this.onError(msg);
   }

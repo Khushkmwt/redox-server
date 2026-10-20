@@ -1,6 +1,6 @@
 import fs from "node:fs";
 import path from "node:path";
-import type { Store } from "./store.js";
+import { Store } from "./store.js";
 
 import {
   type SnapshotData,
@@ -15,27 +15,7 @@ export function getDefaultDumpPath(): string {
   return process.env.DUMP_PATH ?? path.join(process.cwd(), "data", "dump.json");
 }
 
-type Serializer = (store: Store, key: string, ttlMsRemaining?: number) => SnapshotEntry | null;
 type Restorer = (store: Store, item: SnapshotEntry, effectiveTtl?: number) => boolean;
-
-const serializers: Record<string, Serializer> = {
-  string: (store, key, ttlMsRemaining) => {
-    const val = store.get(key);
-    return val !== undefined ? { key, type: "string", value: val, ttlMsRemaining } : null;
-  },
-  hash: (store, key, ttlMsRemaining) => {
-    const pairs = store.hgetall(key);
-    return { key, type: "hash", fields: Object.fromEntries(pairs), ttlMsRemaining };
-  },
-  list: (store, key, ttlMsRemaining) => {
-    const elements = store.lrange(key, 0, -1);
-    return { key, type: "list", elements, ttlMsRemaining };
-  },
-  set: (store, key, ttlMsRemaining) => {
-    const members = store.smembers(key);
-    return { key, type: "set", members, ttlMsRemaining };
-  },
-};
 
 const restorers: Record<string, Restorer> = {
   string: (store, item, effectiveTtl) => {
@@ -66,8 +46,79 @@ const restorers: Record<string, Restorer> = {
 };
 
 /**
+ * Validate raw parsed JSON against the strict SnapshotData schema (R3).
+ */
+export function validateSnapshotData(raw: unknown): SnapshotData {
+  if (!raw || typeof raw !== "object") {
+    throw new Error("Invalid snapshot format: expected JSON object");
+  }
+
+  const obj = raw as Record<string, unknown>;
+  if (obj.version !== 1) {
+    throw new Error(`Unsupported snapshot version: ${obj.version}`);
+  }
+
+  if (typeof obj.savedAt !== "number" || !Number.isFinite(obj.savedAt) || obj.savedAt <= 0) {
+    throw new Error("Invalid snapshot format: savedAt must be a positive finite timestamp");
+  }
+
+  if (!Array.isArray(obj.entries)) {
+    throw new Error("Invalid snapshot format: entries must be an array");
+  }
+
+  for (let i = 0; i < obj.entries.length; i++) {
+    const e = obj.entries[i];
+    if (!e || typeof e !== "object") {
+      throw new Error(`Invalid snapshot entry at index ${i}: expected object`);
+    }
+
+    const entry = e as Record<string, unknown>;
+    if (typeof entry.key !== "string" || entry.key.length === 0) {
+      throw new Error(`Invalid snapshot entry at index ${i}: missing or empty key`);
+    }
+
+    if (
+      entry.ttlMsRemaining !== undefined &&
+      (typeof entry.ttlMsRemaining !== "number" ||
+        !Number.isFinite(entry.ttlMsRemaining) ||
+        entry.ttlMsRemaining < 0)
+    ) {
+      throw new Error(`Invalid snapshot entry at index ${i}: ttlMsRemaining must be a positive number`);
+    }
+
+    switch (entry.type) {
+      case "string":
+        if (typeof entry.value !== "string") {
+          throw new Error(`Invalid snapshot string entry at index ${i}: value must be string`);
+        }
+        break;
+      case "hash":
+        if (!entry.fields || typeof entry.fields !== "object" || Array.isArray(entry.fields)) {
+          throw new Error(`Invalid snapshot hash entry at index ${i}: fields must be object map`);
+        }
+        break;
+      case "list":
+        if (!Array.isArray(entry.elements)) {
+          throw new Error(`Invalid snapshot list entry at index ${i}: elements must be array`);
+        }
+        break;
+      case "set":
+        if (!Array.isArray(entry.members)) {
+          throw new Error(`Invalid snapshot set entry at index ${i}: members must be array`);
+        }
+        break;
+      default:
+        throw new Error(`Invalid snapshot entry at index ${i}: unknown type '${entry.type}'`);
+    }
+  }
+
+  return obj as unknown as SnapshotData;
+}
+
+/**
  * Save an atomic point-in-time snapshot of the in-memory store to disk.
  * Uses atomic rename to prevent file corruption.
+ * Reads entries directly without mutating LRU lastAccessedAt (R5).
  */
 export function saveSnapshot(
   store: Store,
@@ -78,20 +129,7 @@ export function saveSnapshot(
     fs.mkdirSync(dir, { recursive: true });
   }
 
-  const keys = store.keys("*");
-  const entries: SnapshotEntry[] = [];
-
-  for (const key of keys) {
-    const keyType = store.type(key);
-    const ttlMs = store.pttl(key);
-    const ttlMsRemaining = ttlMs > 0 ? ttlMs : undefined;
-
-    const serializer = serializers[keyType];
-    if (serializer) {
-      const entry = serializer(store, key, ttlMsRemaining);
-      if (entry) entries.push(entry);
-    }
-  }
+  const entries = store.exportSnapshotEntries();
 
   const snapshot: SnapshotData = {
     version: 1,
@@ -112,6 +150,7 @@ export function saveSnapshot(
 
 /**
  * Restore store state from a snapshot file if it exists.
+ * Validates complete snapshot and applies atomically through staging (R3).
  */
 export function restoreSnapshot(
   store: Store,
@@ -123,7 +162,14 @@ export function restoreSnapshot(
 
   const start = performance.now();
   const raw = fs.readFileSync(filePath, "utf8");
-  const snapshot = JSON.parse(raw) as SnapshotData;
+  const rawJson = JSON.parse(raw);
+  const snapshot = validateSnapshotData(rawJson);
+
+  // Staging store: all mutations are performed on an isolated store first (R3)
+  const staging = new Store({
+    maxMemoryBytes: store.maxMemory,
+    evictionPolicy: store.evictionPolicy,
+  });
 
   let restoredCount = 0;
   const now = Date.now();
@@ -140,11 +186,13 @@ export function restoreSnapshot(
     }
 
     const restorer = restorers[item.type];
-    if (restorer && restorer(store, item, effectiveTtl)) {
+    if (restorer && restorer(staging, item, effectiveTtl)) {
       restoredCount++;
     }
   }
 
+  // Atomic state commit: only reached if all entries validated and restored without error
+  store.replaceStoreState(staging);
   store.lastSaveTimestamp = Math.floor(snapshot.savedAt / 1000);
 
   const elapsedMs = performance.now() - start;

@@ -5,10 +5,18 @@ services:
       target: production
     container_name: redox-server
     ports:
-      - "${PORT:-6379}:6379"
+      # Bind to localhost by default for security (R18)
+      - "127.0.0.1:${PORT:-6379}:6379"
+    env_file:
+      - .env
     environment:
       HOST: "0.0.0.0"
-      PORT: "6379"
+      PORT: "${PORT:-6379}"
+      MAX_MEMORY: "${MAX_MEMORY:-}"
+      EVICTION_POLICY: "${EVICTION_POLICY:-noeviction}"
+      REDOX_PASSWORD: "${REDOX_PASSWORD:-}"
+      TIMEOUT: "${TIMEOUT:-0}"
+      DUMP_PATH: "/app/data/dump.json"
     restart: unless-stopped
     healthcheck:
       test: ["CMD", "node", "-e",

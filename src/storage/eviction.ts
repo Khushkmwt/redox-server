@@ -6,7 +6,8 @@ import { EVICTION_SAMPLE_SIZE } from "../utils/constants.js";
 
 /**
  * Enforce memory limits before applying memory-increasing delta.
- * If maxmemory is exceeded and policy is allkeys-lru, evicts keys until within limits.
+ * Uses transactional eviction planning: if the delta cannot fit even after
+ * all eligible evictions, no keys are evicted and OOM is thrown.
  */
 export function evictForMemoryDelta(
   data: Map<string, Entry>,
@@ -40,42 +41,79 @@ export function evictForMemoryDelta(
         ? new Set([excludeKeys])
         : null;
 
-  let freedBytes = 0;
-  let evictedCount = 0;
-
-  // allkeys-lru: sample keys and evict the oldest accessed
-  while (
-    usedMemory - freedBytes + deltaBytes > maxMemory &&
-    data.size > (excludeSet?.size ?? 0)
-  ) {
-    let oldestKey: string | null = null;
-    let oldestTime = Infinity;
-
-    let sampleCount = 0;
-    for (const [k, entry] of data.entries()) {
-      if (excludeSet?.has(k)) continue;
-      if (entry.lastAccessedAt < oldestTime) {
-        oldestTime = entry.lastAccessedAt;
-        oldestKey = k;
-      }
-      if (++sampleCount >= EVICTION_SAMPLE_SIZE) break;
-    }
-
-    if (oldestKey) {
-      const entry = data.get(oldestKey)!;
-      const entryBytes = calculateEntryBytes(oldestKey, entry);
-      data.delete(oldestKey);
-      ttlKeys.delete(oldestKey);
-      freedBytes += entryBytes;
-      evictedCount++;
-    } else {
-      break;
+  // Collect all eligible keys currently in store that are not excluded
+  const eligibleKeys: string[] = [];
+  for (const k of data.keys()) {
+    if (!excludeSet?.has(k)) {
+      eligibleKeys.push(k);
     }
   }
 
-  if (usedMemory - freedBytes + deltaBytes > maxMemory) {
+  if (eligibleKeys.length === 0) {
     throw new Error("OOM command not allowed when used memory > 'maxmemory'");
   }
 
-  return { freedBytes, evictedCount };
+  const plannedEvictions: string[] = [];
+  let plannedFreed = 0;
+  const simulatedExcluded = new Set<string>();
+
+  // Plan eviction candidates until memory limit will be satisfied
+  while (
+    usedMemory - plannedFreed + deltaBytes > maxMemory &&
+    simulatedExcluded.size < eligibleKeys.length
+  ) {
+    const remainingCandidates = eligibleKeys.filter((k) => !simulatedExcluded.has(k));
+    if (remainingCandidates.length === 0) break;
+
+    let oldestKey: string | null = null;
+    let oldestTime = Infinity;
+
+    const sampleCount = Math.min(remainingCandidates.length, EVICTION_SAMPLE_SIZE);
+
+    if (remainingCandidates.length <= EVICTION_SAMPLE_SIZE) {
+      for (const k of remainingCandidates) {
+        const entry = data.get(k)!;
+        if (entry.lastAccessedAt < oldestTime) {
+          oldestTime = entry.lastAccessedAt;
+          oldestKey = k;
+        }
+      }
+    } else {
+      // Uniform random sampling across eligible keys
+      const sampledIndices = new Set<number>();
+      while (sampledIndices.size < sampleCount) {
+        const idx = Math.floor(Math.random() * remainingCandidates.length);
+        sampledIndices.add(idx);
+      }
+      for (const idx of sampledIndices) {
+        const k = remainingCandidates[idx];
+        const entry = data.get(k)!;
+        if (entry.lastAccessedAt < oldestTime) {
+          oldestTime = entry.lastAccessedAt;
+          oldestKey = k;
+        }
+      }
+    }
+
+    if (!oldestKey) break;
+
+    simulatedExcluded.add(oldestKey);
+    plannedEvictions.push(oldestKey);
+    const entry = data.get(oldestKey)!;
+    plannedFreed += calculateEntryBytes(oldestKey, entry);
+  }
+
+  // Transactional guard: if even after all possible evictions it still cannot fit,
+  // do NOT evict any keys.
+  if (usedMemory - plannedFreed + deltaBytes > maxMemory) {
+    throw new Error("OOM command not allowed when used memory > 'maxmemory'");
+  }
+
+  // Commit planned evictions
+  for (const key of plannedEvictions) {
+    data.delete(key);
+    ttlKeys.delete(key);
+  }
+
+  return { freedBytes: plannedFreed, evictedCount: plannedEvictions.length };
 }

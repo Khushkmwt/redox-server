@@ -10,6 +10,7 @@ import {
   type ValueType,
   type EvictionPolicy,
 } from "./types.js";
+import type { SnapshotEntry } from "../types/persistence.js";
 import {
   calculateEntryBytes,
   parseMemoryString,
@@ -61,9 +62,17 @@ class Store {
 
   constructor(options?: { maxMemoryBytes?: number; evictionPolicy?: EvictionPolicy; port?: number }) {
     if (options?.maxMemoryBytes !== undefined) {
+      if (!Number.isFinite(options.maxMemoryBytes) || options.maxMemoryBytes < 0) {
+        throw new Error(`Invalid maxMemoryBytes: '${options.maxMemoryBytes}'`);
+      }
       this.maxMemory = options.maxMemoryBytes;
     }
     if (options?.evictionPolicy !== undefined) {
+      if (options.evictionPolicy !== "noeviction" && options.evictionPolicy !== "allkeys-lru") {
+        throw new Error(
+          `Invalid evictionPolicy: '${options.evictionPolicy}'. Must be 'noeviction' or 'allkeys-lru'`
+        );
+      }
       this.evictionPolicy = options.evictionPolicy;
     }
     if (options?.port !== undefined) {
@@ -337,6 +346,66 @@ class Store {
     this.usedMemory = 0;
     this.evictedKeys = 0;
     this.expiredKeys = 0;
+  }
+
+  /**
+   * Export snapshot entries directly without touching LRU lastAccessedAt (R5).
+   */
+  exportSnapshotEntries(): SnapshotEntry[] {
+    const entries: SnapshotEntry[] = [];
+    const now = Date.now();
+
+    for (const [key, entry] of this.data.entries()) {
+      if (this.checkExpired(key)) continue;
+
+      const ttlMsRemaining =
+        entry.expiresAt !== undefined && entry.expiresAt > now
+          ? entry.expiresAt - now
+          : undefined;
+
+      if (entry.type === "string") {
+        entries.push({ key, type: "string", value: entry.value, ttlMsRemaining });
+      } else if (entry.type === "hash") {
+        entries.push({
+          key,
+          type: "hash",
+          fields: Object.fromEntries(entry.fields),
+          ttlMsRemaining,
+        });
+      } else if (entry.type === "list") {
+        entries.push({
+          key,
+          type: "list",
+          elements: [...entry.elements],
+          ttlMsRemaining,
+        });
+      } else if (entry.type === "set") {
+        entries.push({
+          key,
+          type: "set",
+          members: Array.from(entry.members),
+          ttlMsRemaining,
+        });
+      }
+    }
+    return entries;
+  }
+
+  /**
+   * Atomically replace this store's contents with another store's contents (R3).
+   */
+  replaceStoreState(other: Store): void {
+    this.data.clear();
+    for (const [k, v] of other.data.entries()) {
+      this.data.set(k, v);
+    }
+    this.ttlKeys.clear();
+    for (const k of other.ttlKeys) {
+      this.ttlKeys.add(k);
+    }
+    this.usedMemory = other.usedMemory;
+    this.evictedKeys = other.evictedKeys;
+    this.expiredKeys = other.expiredKeys;
   }
 
   info(section?: string): string {

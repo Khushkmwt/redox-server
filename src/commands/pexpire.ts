@@ -1,6 +1,7 @@
 import { encode } from "../protocol/resp-encoder.js";
 import type { Store } from "../storage/store.js";
 import { isIntegerString } from "../utils/validators.js";
+import { MAX_TTL_MS } from "../utils/constants.js";
 import { errWrongArgs, errNotInteger } from "./command-utils.js";
 
 // PEXPIRE key milliseconds
@@ -14,7 +15,7 @@ export function pexpire(args: string[], store: Store): Buffer {
   }
 
   const ms = parseInt(args[1], 10);
-  if (isNaN(ms)) {
+  if (isNaN(ms) || ms > MAX_TTL_MS) {
     return errNotInteger();
   }
 

@@ -75,4 +75,35 @@ describe("Memory eviction policies", () => {
     expect(run(["GET", "k2"])).toBe("$-1\r\n"); // evicted!
     expect(run(["GET", "k3"])).toContain("v3");
   });
+
+  it("R2: failed write under allkeys-lru does not evict unrelated keys (transactional)", () => {
+    store.maxMemory = 100;
+    store.evictionPolicy = "allkeys-lru";
+
+    store.set("keep1", "val1");
+    store.set("keep2", "val2");
+
+    // Write a key that is larger than the entire maxMemory (impossible to fit even if all keys are evicted)
+    const res = run(["SET", "giant", "x".repeat(200)]);
+    expect(res).toContain("-OOM command not allowed");
+
+    // Existing keys must still exist intact!
+    expect(store.get("keep1")).toBe("val1");
+    expect(store.get("keep2")).toBe("val2");
+    expect(store.evictedKeysCount).toBe(0);
+  });
+
+  it("R2: multi-key MSET with new keys evicts eligible keys and succeeds", () => {
+    store.maxMemory = 120;
+    store.evictionPolicy = "allkeys-lru";
+
+    store.set("old1", "v1");
+    store.set("old2", "v2");
+
+    // MSET with 3 new keys (3 > current key count of 2)
+    const res = run(["MSET", "new1", "a", "new2", "b"]);
+    expect(res).toBe("+OK\r\n");
+    expect(store.get("new1")).toBe("a");
+    expect(store.get("new2")).toBe("b");
+  });
 });

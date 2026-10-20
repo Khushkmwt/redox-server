@@ -8,23 +8,37 @@ export const SET_MEMBER_OVERHEAD = 16;
 /**
  * Parse human memory strings like '64mb', '500kb', '1gb', or raw bytes.
  * Returns bytes as a number (0 = unlimited).
+ * Throws on invalid or negative format (R8).
  */
 export function parseMemoryString(memStr?: string): number {
-  if (!memStr) return 0;
+  if (!memStr || memStr.trim() === "" || memStr.trim() === "0") return 0;
   const match = memStr.trim().toLowerCase().match(/^(\d+(?:\.\d+)?)\s*(b|kb|mb|gb)?$/);
-  if (!match) return 0;
+  if (!match) {
+    throw new Error(`Invalid memory configuration: '${memStr}'`);
+  }
   const num = parseFloat(match[1]);
+  if (!Number.isFinite(num) || num < 0) {
+    throw new Error(`Invalid memory configuration: '${memStr}'`);
+  }
   const unit = match[2] || "b";
+  let bytes = 0;
   switch (unit) {
     case "kb":
-      return Math.round(num * 1024);
+      bytes = Math.round(num * 1024);
+      break;
     case "mb":
-      return Math.round(num * 1024 * 1024);
+      bytes = Math.round(num * 1024 * 1024);
+      break;
     case "gb":
-      return Math.round(num * 1024 * 1024 * 1024);
+      bytes = Math.round(num * 1024 * 1024 * 1024);
+      break;
     default:
-      return Math.round(num);
+      bytes = Math.round(num);
   }
+  if (!Number.isFinite(bytes) || bytes > Number.MAX_SAFE_INTEGER) {
+    throw new Error(`Invalid memory configuration: '${memStr}' exceeds maximum safe limit`);
+  }
+  return bytes;
 }
 
 /**

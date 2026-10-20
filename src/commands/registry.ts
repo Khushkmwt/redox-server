@@ -49,6 +49,8 @@ import { srem } from "./srem.js";
 import { smembers } from "./smembers.js";
 import { sismember } from "./sismember.js";
 import { scard } from "./scard.js";
+import { auth } from "./auth.js";
+import { quit } from "./quit.js";
 
 export const commandHandlers: Record<string, CommandHandler> = {
   PING: ping,
@@ -98,6 +100,8 @@ export const commandHandlers: Record<string, CommandHandler> = {
   SMEMBERS: smembers,
   SISMEMBER: sismember,
   SCARD: scard,
+  AUTH: auth,
+  QUIT: quit,
 };
 
 /**

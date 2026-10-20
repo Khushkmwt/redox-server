@@ -4,24 +4,45 @@ import { dispatch } from "./commands/index.js";
 import { store } from "./storage/store.js";
 import { encode } from "./protocol/resp-encoder.js";
 import { logger } from "./utils/logger.js";
-
+import type { ConnectionContext } from "./types/commands.js";
 import { restoreSnapshot, saveSnapshot } from "./storage/persistence.js";
 
 const HOST = process.env.HOST ?? "127.0.0.1";
 const PORT = Number(process.env.PORT ?? 6379);
 const MAX_CONNECTIONS = Number(process.env.MAX_CONNECTIONS ?? 100);
 const TIMEOUT_SECONDS = Number(process.env.TIMEOUT ?? 0);
+const DEFAULT_PASSWORD = process.env.REDOX_PASSWORD ?? process.env.REQUIREPASS;
+
+function parseCliPassword(): string | undefined {
+  const args = process.argv.slice(2);
+  for (let i = 0; i < args.length; i++) {
+    if (args[i] === "--requirepass" || args[i] === "-a") {
+      return args[i + 1];
+    }
+    if (args[i].startsWith("--requirepass=")) {
+      return args[i].slice("--requirepass=".length);
+    }
+  }
+  return undefined;
+}
 
 export interface RedoxServerOptions {
   store?: typeof store;
   maxConnections?: number;
   timeoutSeconds?: number;
+  password?: string;
 }
 
+let nextClientId = 1;
+
+/**
+ * Creates a Redox TCP server instance with isolated connection contexts and authentication.
+ */
 export function createRedoxServer(options: RedoxServerOptions = {}): net.Server {
   const storeInstance = options.store ?? store;
   const maxConnections = options.maxConnections ?? MAX_CONNECTIONS;
   const timeoutSeconds = options.timeoutSeconds ?? TIMEOUT_SECONDS;
+  const serverPassword = options.password ?? parseCliPassword() ?? DEFAULT_PASSWORD;
   let activeConnections = 0;
 
   return net.createServer((socket) => {
@@ -36,8 +57,17 @@ export function createRedoxServer(options: RedoxServerOptions = {}): net.Server 
 
     activeConnections++;
     storeInstance.totalConnections++;
+    const clientId = nextClientId++;
     socket.setNoDelay(true);
-    logger.info(`[connect] ${socket.remoteAddress}:${socket.remotePort} (active: ${activeConnections})`);
+    logger.info(`[connect] id=${clientId} ${socket.remoteAddress}:${socket.remotePort} (active: ${activeConnections})`);
+
+    const context: ConnectionContext = {
+      id: clientId,
+      authenticated: !serverPassword,
+      serverPassword: serverPassword || undefined,
+      remoteAddress: socket.remoteAddress,
+      remotePort: socket.remotePort,
+    };
 
     if (timeoutSeconds > 0) {
       socket.setTimeout(timeoutSeconds * 1000);
@@ -51,13 +81,15 @@ export function createRedoxServer(options: RedoxServerOptions = {}): net.Server 
 
     const parser = new RespParser(
       (args) => {
-        const response = dispatch(args, storeInstance);
+        const response = dispatch(args, storeInstance, context);
         socket.write(response);
+        if (args[0]?.toUpperCase() === "QUIT") {
+          socket.end();
+        }
       },
       (msg) => {
         logger.error(`[parse error] ${socket.remoteAddress}: ${msg}`);
-        socket.write(encode.error(`ERR Protocol error: ${msg}`));
-        socket.destroy();
+        socket.end(encode.error(`ERR Protocol error: ${msg}`));
       }
     );
 
@@ -80,7 +112,6 @@ export const server = createRedoxServer();
 
 server.on("error", (err) => {
   logger.error(`[server error] ${err.message}`);
-  process.exit(1);
 });
 
 // Attempt to restore snapshot on startup if available
@@ -96,7 +127,10 @@ try {
 }
 
 server.listen(PORT, HOST, () => {
-  logger.info(`Redox listening on ${HOST}:${PORT}`);
+  const activePass = parseCliPassword() ?? DEFAULT_PASSWORD;
+  logger.info(
+    `Redox listening on ${HOST}:${PORT}${activePass ? " (password protection enabled)" : ""}`
+  );
 });
 
 // Graceful shutdown
@@ -128,4 +162,3 @@ function shutdown() {
 
 process.on("SIGINT", shutdown);
 process.on("SIGTERM", shutdown);
-
