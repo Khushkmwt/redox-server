@@ -7,6 +7,6 @@ export function append(args: string[], store: Store): Buffer {
     return encode.error("ERR wrong number of arguments for 'append' command");
   const [key, value] = args;
   const newValue = (store.get(key) ?? "") + value;
-  store.set(key, newValue);
+  store.set(key, newValue, undefined, true);
   return encode.integer(Buffer.byteLength(newValue, "utf8"));
 }

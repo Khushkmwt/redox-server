@@ -93,4 +93,15 @@ describe("resp-parser", () => {
     expect(errors).toHaveLength(1);
     expect(errors[0]).toMatch(/Invalid bulk length/);
   });
+
+  it("R1: immediately drops subsequent commands pipelined in the same chunk after a framing error", () => {
+    const { parser, commands, errors } = makeParser();
+    const chunk = Buffer.concat([
+      Buffer.from("+bad\r\n"),
+      encode(["SET", "key", "val"]),
+    ]);
+    parser.feed(chunk);
+    expect(errors).toHaveLength(1);
+    expect(commands).toHaveLength(0);
+  });
 });

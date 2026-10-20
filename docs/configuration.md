@@ -13,6 +13,9 @@ This guide describes how to configure `redox-server` for local development, test
 | `MAX_CONNECTIONS` | number | `100` | Maximum number of simultaneous connected TCP clients. |
 | `TIMEOUT` | number | `0` | Inactivity timeout in seconds. `0` disables timeout. |
 | `LOG_LEVEL` | string | `INFO` | Logging level: `DEBUG`, `INFO`, `WARN`, `ERROR`, or `SILENT`. |
+| `MAX_MEMORY` | string | `0` | Max memory cap (e.g. `64mb`, `500kb`; `0` disables cap). |
+| `EVICTION_POLICY` | string | `noeviction` | Eviction behavior when memory cap reached (`noeviction`, `allkeys-lru`). |
+| `DUMP_PATH` | string | `data/dump.json` | Path to snapshot persistence dump file. |
 
 ---
 
@@ -43,3 +46,18 @@ docker compose up -d
 
 ### TCP Healthcheck:
 The Compose setup includes an automated TCP healthcheck that connects on port 6379, executes `PING`, expects `+PONG\r\n`, and reports container health status.
+
+---
+
+## Testing Connections
+
+Connect using the official `redox-cli`:
+
+```bash
+# Connect to running server
+redox-cli -p 7865
+
+# Or execute one-shot healthcheck
+redox-cli -p 7865 PING
+```
+

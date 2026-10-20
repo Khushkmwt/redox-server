@@ -16,8 +16,12 @@
 // On unrecoverable framing errors the parser calls `onError` and resets,
 // allowing the connection to return a RESP2 error without crashing.
 
-const MAX_BULK_BYTES = 512 * 1024 * 1024; // 512 MiB hard limit per argument
-const MAX_ARRAY_SIZE = 1024; // maximum arguments per command
+import {
+  MAX_ARRAY_SIZE,
+  MAX_BULK_BYTES,
+  MAX_BUFFER_BYTES,
+} from "../utils/constants.js";
+import { isPositiveIntegerString } from "../utils/validators.js";
 
 type State = "ARRAY_HEADER" | "BULK_HEADER" | "BULK_DATA";
 
@@ -34,8 +38,15 @@ export class RespParser {
   ) {}
 
   feed(chunk: Buffer): void {
+    if (this.buf.length + chunk.length > MAX_BUFFER_BYTES) {
+      this.error("ERR input buffer limit exceeded");
+      return;
+    }
     this.buf = Buffer.concat([this.buf, chunk]);
     this.process();
+    if (this.buf.length === 0) {
+      this.buf = Buffer.alloc(0);
+    }
   }
 
   private process(): void {
@@ -58,28 +69,55 @@ export class RespParser {
     }
   }
 
+  /**
+   * Parse and validate a prefixed integer header line (e.g. `*<count>` or `$<len>`).
+   * Returns parsed number, or null on error (after calling this.error()).
+   */
+  private parseHeaderCount(
+    line: string,
+    prefix: string,
+    typeLabel: string,
+    maxLimit: number
+  ): number | null {
+    if (!line.startsWith(prefix)) {
+      this.error(`Expected ${typeLabel} (${prefix}), got: ${JSON.stringify(line)}`);
+      return null;
+    }
+
+    const numStr = line.slice(1);
+    const label = prefix === "*" ? "array count" : "bulk length";
+    if (!isPositiveIntegerString(numStr)) {
+      this.error(`Invalid ${label}: ${numStr}`);
+      return null;
+    }
+
+    const num = parseInt(numStr, 10);
+    if (isNaN(num) || num < 0) {
+      this.error(`Invalid ${label}: ${numStr}`);
+      return null;
+    }
+
+    if (num > maxLimit) {
+      const unit = prefix === "$" ? ` bytes (max ${maxLimit})` : ` (max ${maxLimit})`;
+      this.error(`${typeLabel === "bulk string" ? "Bulk string" : "Array"} too large: ${num}${unit}`);
+      return null;
+    }
+
+    return num;
+  }
+
   // --- State: ARRAY_HEADER ---
   // Expect:  *<n>\r\n
   private readArrayHeader(): boolean {
     const line = this.readLine();
     if (line === null) return false;
 
-    if (!line.startsWith("*")) {
-      this.error(`Expected array (*), got: ${JSON.stringify(line)}`);
-      return true; // consumed the bad line, keep going (after reset)
+    const count = this.parseHeaderCount(line, "*", "array", MAX_ARRAY_SIZE);
+    if (count === null) {
+      return false; // Fatal framing error: abort further processing of this buffer
     }
 
-    const count = parseInt(line.slice(1), 10);
-    if (isNaN(count) || count < 0) {
-      this.error(`Invalid array count: ${line.slice(1)}`);
-      return true;
-    }
-    if (count > MAX_ARRAY_SIZE) {
-      this.error(`Array too large: ${count} (max ${MAX_ARRAY_SIZE})`);
-      return true;
-    }
     if (count === 0) {
-      // Empty array — emit immediately.
       this.emit([]);
       return true;
     }
@@ -96,19 +134,9 @@ export class RespParser {
     const line = this.readLine();
     if (line === null) return false;
 
-    if (!line.startsWith("$")) {
-      this.error(`Expected bulk string ($), got: ${JSON.stringify(line)}`);
-      return true;
-    }
-
-    const len = parseInt(line.slice(1), 10);
-    if (isNaN(len) || len < 0) {
-      this.error(`Invalid bulk length: ${line.slice(1)}`);
-      return true;
-    }
-    if (len > MAX_BULK_BYTES) {
-      this.error(`Bulk string too large: ${len} bytes (max ${MAX_BULK_BYTES})`);
-      return true;
+    const len = this.parseHeaderCount(line, "$", "bulk string", MAX_BULK_BYTES);
+    if (len === null) {
+      return false; // Fatal framing error: abort further processing of this buffer
     }
 
     this.bulkLen = len;
@@ -127,8 +155,7 @@ export class RespParser {
 
     if (crlf[0] !== 0x0d || crlf[1] !== 0x0a) {
       this.error(`Missing CRLF after bulk data`);
-      this.buf = this.buf.subarray(needed);
-      return true;
+      return false;
     }
 
     this.args.push(data.toString("utf8"));
@@ -164,6 +191,7 @@ export class RespParser {
   }
 
   private error(msg: string): void {
+    this.buf = Buffer.alloc(0); // clear remaining bytes so buffered commands do not execute
     this.resetState();
     this.onError(msg);
   }

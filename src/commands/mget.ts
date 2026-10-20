@@ -9,6 +9,10 @@ export function mget(args: string[], store: Store): Buffer {
 
   const items: Buffer[] = [];
   for (const key of args) {
+    if (store.type(key) !== "string") {
+      items.push(encode.nullBulkString());
+      continue;
+    }
     const val = store.get(key);
     if (val === undefined) {
       items.push(encode.nullBulkString());

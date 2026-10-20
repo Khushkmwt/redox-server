@@ -16,10 +16,11 @@ Clients connect over TCP and communicate using the **RESP2** wire protocol — t
 
 ## Documentation
 
-Comprehensive documentation is available in the [`docs/`](./docs) directory:
+Comprehensive documentation is available in the [`docs/`](./docs) directory and release notes:
 
+- [**v1.0.0 Release Notes**](./docs/release/RELEASE_v1.0.0.md) — What's new in the official v1.0.0 major release.
 - [**Architecture Guide**](./docs/architecture.md) — System components, connection lifecycle, and parser state machine.
-- [**Command Reference**](./docs/commands.md) — Full specification for all 19 supported commands with examples.
+- [**Command Reference**](./docs/commands.md) — Full specification for all 36 supported commands with examples.
 - [**RESP2 Protocol**](./docs/protocol.md) — Wire-level protocol details, framing, and types.
 - [**Configuration Guide**](./docs/configuration.md) — Environment variables, local setup, and Docker deployment.
 
@@ -61,6 +62,9 @@ Configure using environment variables or a `.env` file:
 | `MAX_CONNECTIONS` | `100` | Maximum simultaneous client connections |
 | `TIMEOUT` | `0` | Idle connection timeout in seconds (`0` disables) |
 | `LOG_LEVEL` | `INFO` | Logging verbosity (`DEBUG`, `INFO`, `WARN`, `ERROR`, `SILENT`) |
+| `MAX_MEMORY` | `0` | Max memory cap (e.g. `64mb`, `500kb`; `0` disables cap) |
+| `EVICTION_POLICY` | `noeviction` | Eviction behavior when memory cap reached (`noeviction`, `allkeys-lru`) |
+| `DUMP_PATH` | `data/dump.json` | Snapshot persistence file location |
 
 ---
 
@@ -81,14 +85,25 @@ docker compose down
 
 ## Connecting
 
-Any RESP2-compatible client works. Connect using `redis-cli`:
+### 1. Using Redox CLI (`redox-cli`)
+The dedicated, themed interactive client for Redox:
+
+```bash
+# From the redox-cli directory
+npm start -- -p 6379
+
+# Or globally if linked via `npm link`
+redox-cli -p 6379
+```
+
+### 2. Using standard Redis CLI (`redis-cli`)
+Redox speaks standard RESP2, so official Redis tools work out of the box:
 
 ```bash
 redis-cli -h 127.0.0.1 -p 6379
 ```
 
-Or connect with raw TCP tools like `nc`:
-
+### 3. Using raw TCP (`nc`)
 ```bash
 nc 127.0.0.1 6379
 ```
@@ -110,7 +125,7 @@ nc 127.0.0.1 6379
 ### String Operations
 | Command | Description | Response |
 |---|---|---|
-| `SET key value` | Store a string key-value pair | `+OK` |
+| `SET key value [EX s] [PX ms]` | Store a string key-value pair with optional TTL | `+OK` |
 | `GET key` | Retrieve value for key | Bulk string or null |
 | `APPEND key value` | Append value to key | New byte length (integer) |
 | `STRLEN key` | Get byte length of stored value | Integer length (0 if missing) |
@@ -131,12 +146,37 @@ nc 127.0.0.1 6379
 | `MGET key [key ...]` | Get multiple values in order | Array of bulk strings/nulls |
 | `KEYS pattern` | Match keys using glob pattern (`*`, `?`, `[abc]`) | Array of bulk strings |
 
+### Hashes
+| Command | Description | Response |
+|---|---|---|
+| `HSET key field value [f v ...]` | Set fields on a hash | Integer count of added fields |
+| `HGET key field` | Get value of a hash field | Bulk string or null |
+| `HMGET key field [field ...]` | Get multiple field values in order | Array of bulk strings/nulls |
+| `HDEL key field [field ...]` | Delete fields from a hash | Integer count removed |
+| `HEXISTS key field` | Check if field exists in hash | Integer (`1` or `0`) |
+| `HLEN key` | Total count of fields in hash | Integer |
+| `HGETALL key` | Return all field-value pairs | Array `[f1, v1, f2, v2, ...]` |
+| `HKEYS key` | List all field names in hash | Array of bulk strings |
+| `HVALS key` | List all values in hash | Array of bulk strings |
+
+### Key Expiration & TTL
+| Command | Description | Response |
+|---|---|---|
+| `EXPIRE key seconds` | Set timeout on key in seconds | Integer (`1` if set, `0` if missing) |
+| `PEXPIRE key milliseconds` | Set timeout on key in milliseconds | Integer (`1` if set, `0` if missing) |
+| `TTL key` | Return remaining TTL in seconds (`-1` none, `-2` missing) | Integer |
+| `PTTL key` | Return remaining TTL in milliseconds | Integer |
+| `PERSIST key` | Remove timeout from key | Integer (`1` if removed, `0` if none) |
+
 ### Server & Meta
 | Command | Description | Response |
 |---|---|---|
+| `INFO [section]` | Report memory metrics and server diagnostics | Bulk string |
 | `COMMAND` | List all supported commands | Array of bulk strings |
 | `COMMAND COUNT` | Total number of commands | Integer count |
 | `COMMAND DOCS` | Return empty docs array for client probes | Array |
+| `SAVE` | Persist snapshot of in-memory store to disk | `+OK` |
+| `LASTSAVE` | UNIX timestamp of last successful snapshot | Integer |
 
 Command names are **case-insensitive**.
 
@@ -145,7 +185,7 @@ Command names are **case-insensitive**.
 ## Running tests & benchmark
 
 ```bash
-# Run full Vitest suite (105+ tests)
+# Run full Vitest suite (134+ tests including unit, integration & stress)
 npm test
 
 # Run tests in watch mode
@@ -154,7 +194,7 @@ npm run test:watch
 # Run coverage report
 npm run test:coverage
 
-# Run sequential throughput benchmark (server must be running)
+# Run high-performance sequential latency & pipelined throughput benchmark
 npm run benchmark
 ```
 
